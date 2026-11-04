@@ -75,6 +75,21 @@ export interface UploadSession {
   status: string;
 }
 
+export type ReportStatus = 'Draft' | 'Final';
+
+export interface Report {
+  id: string;
+  study_id: string;
+  patient_id: string;
+  author_id: string | null;
+  status: ReportStatus;
+  findings: string;
+  impression: string;
+  finalized_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
 export type EncounterStatus = 'planned' | 'in-progress' | 'finished' | 'cancelled';
 
 export interface Encounter {

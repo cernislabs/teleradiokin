@@ -27,3 +27,6 @@ pylibjpeg-libjpeg==2.5.0
 pylibjpeg-openjpeg==2.6.0
 numpy==2.5.4
 Pillow==11.0.0
+
+# --- Reports (PDF) ---
+fpdf2==2.8.1

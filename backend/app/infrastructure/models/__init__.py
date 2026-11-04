@@ -5,6 +5,7 @@ them. Entity models are added as features land (patients, studies, reports, audi
 """
 from app.infrastructure.models.base import Base, TimestampedBase
 from app.infrastructure.models.patient import Encounter, Patient
+from app.infrastructure.models.report import Report
 from app.infrastructure.models.study import Study, UploadSession
 from app.infrastructure.models.user import User
 
@@ -16,4 +17,5 @@ __all__ = [
     "Encounter",
     "Study",
     "UploadSession",
+    "Report",
 ]

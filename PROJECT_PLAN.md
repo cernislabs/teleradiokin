@@ -12,8 +12,8 @@
 - **Target context:** Central Africa — low bandwidth, intermittent connectivity, modest hardware
 - **Language:** All code/docs in English; frontend strings kept i18n-extractable (French later)
 - **Last updated:** 2026-11-04
-- **Current status:** `IN PROGRESS` — Iteration 4 (Worklist & Viewer) DONE & verified; next up Iteration 5 (Reports) → milestone pause after Reports
-- **Active iteration:** Iteration 5 — Reports (next)
+- **Current status:** `MILESTONE PAUSE` — Iteration 5 (Reports) DONE & verified; awaiting user test before Iteration 6 (Audit Trail)
+- **Active iteration:** Iteration 6 — Audit Trail (next)
 - **Cadence:** build phases back-to-back; **pause at milestones** (after Auth, after Upload, after Reports) for the user to run `docker-compose up` and test
 - **Env note:** no local Python / .NET / Angular toolchain — all build/test/run goes through Docker (python:3.12-slim, node, compose)
 
@@ -115,13 +115,13 @@ Cross-cutting: **clean layered architecture + DI**, **security**, **tests**, **d
 - [x] Tests for file endpoint/worklist (28 pass); live-verified worklist + DICOM file served via proxy
 - [x] ADR-010: in-browser viewer (cornerstone) decision + trade-offs
 
-### Iteration 5 — Reports (E5) — `TODO`
-- [ ] Structured report entity: findings, impression, status (draft, final)
-- [ ] Report linked to study + patient; create/edit (radiologist)
-- [ ] Draft→final transition; referring clinician view + print (server-rendered PDF)
-- [ ] Angular report editor + read/print view
-- [ ] Tests for report lifecycle & authorization
-- [ ] ADR: **report-delivery approach** (with teleradiology literature/practice rationale)
+### Iteration 5 — Reports (E5) — `DONE`
+- [x] Structured `Report` entity: findings, impression, status (Draft/Final); migration `0004`
+- [x] Report linked to study + patient; create/edit by radiologist/admin (one per study)
+- [x] Draft→Final transition (locks report, study→Reported); server-rendered **PDF** for clinician view/print
+- [x] Angular report panel in the viewer (editor for radiologist, read-only + PDF for clinician)
+- [x] Tests for report lifecycle & authorization (33 pass); live-verified finalize + PDF via proxy
+- [x] ADR-011: report model & delivery approach (ACR/RSNA structured-reporting rationale)
 
 ### Iteration 6 — Audit Trail (E6) — `TODO`
 - [ ] Audit-log service; records actor, action, entity, timestamp
@@ -189,6 +189,7 @@ Executed immediately (see ADR-004):
 | 2026-11-04 | 2 — Patients | `Patient`/`Encounter` models (JSONB), migration `0002`, role-scoped CRUD, consent enforcement, Angular patient list/form/detail, sample patient+encounter seed | ✅ 22 pytest + frontend build + live CRUD/role checks green | It.3 Imaging Upload |
 | 2026-11-04 | 3 — Upload | Chunked/resumable upload, DICOM+image validation, `Study` model + migration `0003`, async preview pipeline, preview endpoint, Angular upload UI. Live: chunked DICOM → Pending+metadata+JPEG preview via proxy | ✅ 27 pytest + frontend build + live upload→preview green | **milestone pause** → It.4 Worklist/Viewer |
 | 2026-11-04 | 4 — Worklist/Viewer | Pending worklist, cornerstone viewer (lazy, W/L+pan+zoom), `GET /studies/{id}/file` endpoint, dashboard link. Live: worklist + DICOM file served via proxy | ✅ 28 pytest + frontend build (initial 378 kB, viewer lazy) + live checks green | It.5 Reports |
+| 2026-11-04 | 5 — Reports | `Report` model + migration `0004`, draft→final lifecycle (locks + study→Reported), server-rendered PDF, Angular report panel. Live: finalize + clinician PDF via proxy; edit-after-final 403 | ✅ 33 pytest + frontend build + live report/PDF green | **milestone pause** → It.6 Audit |
 
 ---
 

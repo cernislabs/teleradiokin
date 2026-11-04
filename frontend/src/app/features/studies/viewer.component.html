@@ -56,4 +56,47 @@
       Drag to apply the selected tool; scroll to zoom.
     </p>
   }
+
+  <section class="report">
+    <header class="report-head">
+      <h2 i18n="@@report.title">Report</h2>
+      @if (report(); as r) {
+        <span class="badge" [class.final]="r.status === 'Final'">{{ r.status }}</span>
+      }
+      <div class="spacer"></div>
+      @if (report()) {
+        <button class="ghost" (click)="openPdf()" i18n="@@report.pdf">Open PDF</button>
+      }
+    </header>
+
+    @if (canAuthor()) {
+      <label i18n="@@report.findings">
+        Findings
+        <textarea rows="5" [ngModel]="findings()" (ngModelChange)="findings.set($event)"></textarea>
+      </label>
+      <label i18n="@@report.impression">
+        Impression
+        <textarea rows="3" [ngModel]="impression()" (ngModelChange)="impression.set($event)"></textarea>
+      </label>
+      <div class="report-actions">
+        <button (click)="saveDraft()" [disabled]="reportSaving()" i18n="@@report.saveDraft">Save draft</button>
+        <button class="primary" (click)="finalize()" [disabled]="reportSaving()" i18n="@@report.finalize">Finalize</button>
+      </div>
+    } @else {
+      @if (report(); as r) {
+        <div class="report-view">
+          <h3 i18n="@@report.findings">Findings</h3>
+          <p>{{ r.findings || '—' }}</p>
+          <h3 i18n="@@report.impression">Impression</h3>
+          <p>{{ r.impression || '—' }}</p>
+        </div>
+      } @else {
+        <p class="muted" i18n="@@report.none">No report yet.</p>
+      }
+    }
+
+    @if (reportMsg()) {
+      <p class="report-msg">{{ reportMsg() }}</p>
+    }
+  </section>
 </div>

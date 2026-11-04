@@ -4,7 +4,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import auth, encounters, health, patients, studies, users
+from app.api.routers import (
+    auth,
+    encounters,
+    health,
+    patients,
+    reports,
+    studies,
+    users,
+)
 from app.core.config import get_settings
 from app.infrastructure.database import AsyncSessionLocal
 from app.infrastructure.seed import seed_initial_data
@@ -48,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(patients.router)
     app.include_router(encounters.router)
     app.include_router(studies.router)
+    app.include_router(reports.router)
 
     return app
 

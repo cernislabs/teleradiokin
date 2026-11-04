@@ -197,6 +197,10 @@ To review: open the **Worklist** from the dashboard (or log in as the radiologis
 pending study, and open it in the full-size viewer — DICOM renders in-browser with
 Window/Level, Pan, and Zoom; non-DICOM images are shown directly.
 
+To report: in the viewer, the radiologist writes **findings** and **impression**, saves a
+draft, then **finalizes** (which locks the report and marks the study `Reported`). The
+referring clinician opens the same study and views or prints the report as a **PDF**.
+
 > Secrets (JWT signing key, database credentials, seed passwords) are read from environment
 > variables and are **not** committed to source. Configure them in `.env`.
 

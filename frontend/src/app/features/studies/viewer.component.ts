@@ -9,24 +9,29 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 
+import { AuthService } from '../../core/auth.service';
 import { CornerstoneService } from '../../core/cornerstone.service';
+import { ReportService } from '../../core/report.service';
 import { StudyService } from '../../core/study.service';
-import { Study } from '../../core/models';
+import { Report, Study } from '../../core/models';
 
 type Tool = 'wwwc' | 'pan' | 'zoom';
 
 @Component({
   selector: 'app-viewer',
   standalone: true,
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, FormsModule],
   templateUrl: './viewer.component.html',
   styleUrl: './viewer.component.scss',
 })
 export class ViewerComponent implements AfterViewInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly studyService = inject(StudyService);
+  private readonly reportService = inject(ReportService);
+  private readonly auth = inject(AuthService);
   private readonly cornerstone = inject(CornerstoneService);
   private readonly sanitizer = inject(DomSanitizer);
 
@@ -37,7 +42,20 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
   readonly error = signal<string | null>(null);
   readonly activeTool = signal<Tool>('wwwc');
 
+  // --- Report state ---
+  readonly report = signal<Report | null>(null);
+  readonly findings = signal('');
+  readonly impression = signal('');
+  readonly reportSaving = signal(false);
+  readonly reportMsg = signal<string | null>(null);
+
   isDicom = () => this.study()?.is_dicom === true;
+
+  canAuthor = () =>
+    this.auth.hasRole('Radiologist', 'Admin') &&
+    (this.report() === null || this.report()!.status === 'Draft');
+
+  isFinal = () => this.report()?.status === 'Final';
 
   private enabled = false;
   private dragging = false;
@@ -52,6 +70,71 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
         next: (blob) => this.render(blob),
         error: () => this.error.set($localize`:@@viewer.error:Could not load the study image.`),
       });
+    });
+    this.loadReport(id);
+  }
+
+  private loadReport(studyId: string): void {
+    this.reportService.getForStudy(studyId).subscribe((list) => {
+      const r = list[0] ?? null;
+      this.report.set(r);
+      if (r) {
+        this.findings.set(r.findings);
+        this.impression.set(r.impression);
+      }
+    });
+  }
+
+  private persist(status: 'Draft' | 'Final'): void {
+    const study = this.study();
+    if (!study || this.reportSaving()) {
+      return;
+    }
+    this.reportSaving.set(true);
+    this.reportMsg.set(null);
+    const existing = this.report();
+    const done = {
+      next: (r: Report) => {
+        this.report.set(r);
+        this.reportSaving.set(false);
+        this.reportMsg.set(
+          status === 'Final'
+            ? $localize`:@@report.finalized:Report finalized.`
+            : $localize`:@@report.saved:Draft saved.`,
+        );
+      },
+      error: () => {
+        this.reportSaving.set(false);
+        this.reportMsg.set($localize`:@@report.error:Could not save the report.`);
+      },
+    };
+    if (existing) {
+      this.reportService
+        .update(existing.id, { findings: this.findings(), impression: this.impression(), status })
+        .subscribe(done);
+    } else {
+      this.reportService
+        .create(study.id, this.findings(), this.impression(), status)
+        .subscribe(done);
+    }
+  }
+
+  saveDraft(): void {
+    this.persist('Draft');
+  }
+
+  finalize(): void {
+    this.persist('Final');
+  }
+
+  openPdf(): void {
+    const r = this.report();
+    if (!r) {
+      return;
+    }
+    this.reportService.getPdfBlob(r.id).subscribe((blob) => {
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
     });
   }
 

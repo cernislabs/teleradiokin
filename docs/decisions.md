@@ -227,7 +227,39 @@ tools are deferred.
 
 ---
 
+## ADR-011 — Report model & delivery approach
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context.** Radiologists must produce a structured report (findings + impression + status)
+bound to a study/patient, and the referring clinician must be able to view and print it.
+A decision is needed on *how the report is delivered back* to the referring site.
+
+**Decision.**
+- **One structured report per study**, with distinct `findings` and `impression` fields and a
+  `Draft → Final` status. Only the authoring radiologist/admin can edit; **finalizing locks
+  the report** (edits return 409) and transitions the study to `Reported`. Drafting moves the
+  study to `In Review`.
+- **Delivery is in-platform**: the report is stored against the study/patient and surfaced to
+  the referring clinician through the same application (read-only), with a **server-rendered
+  PDF** (`GET /api/reports/{id}/pdf`) for viewing, printing, and local archiving. No email or
+  external transport in the MVP.
+
+**Why (literature & common practice).** Teleradiology guidance — notably the ACR–AAPM
+practice parameters for teleradiology and for the *communication of diagnostic imaging
+findings* — treats the report as the primary, auditable work product and encourages
+**structured reporting** (also promoted by RSNA) with a clear preliminary-vs-final
+distinction. Common teleradiology practice is to deliver the finalized report through the
+platform/RIS, with a portable document (PDF) the referrer can view and print; a locked final
+report preserves the integrity of the medical record. These parameters also require that
+**urgent/critical or unexpected findings** be communicated directly (phone/non-routine
+channel) in addition to the report — explicitly **deferred** here and noted below.
+
+**Trade-off / deferred.** No addendum workflow after finalize (only create/lock for now); no
+critical-results direct-notification channel; no digital signature or RIS/HL7 push. The
+status model and PDF leave room to add these without reworking the data model.
+
+---
+
 <!-- Upcoming ADRs (added as iterations land):
-     ADR-011 Report-delivery approach (with teleradiology literature rationale)
      ADR-012 Audit trail design
 -->
