@@ -40,3 +40,23 @@ class EncounterStatus(StrEnum):
     IN_PROGRESS = "in-progress"
     FINISHED = "finished"
     CANCELLED = "cancelled"
+
+
+class AuditAction(StrEnum):
+    """What a recorded audit event represents (FHIR AuditEvent-leaning)."""
+
+    LOGIN = "login"
+    VIEW = "view"
+    CREATE = "create"
+    UPDATE = "update"
+    FINALIZE = "finalize"
+    DOWNLOAD = "download"
+
+
+class AuditEntity(StrEnum):
+    """The kind of record an audit event concerns."""
+
+    SESSION = "session"
+    PATIENT = "patient"
+    STUDY = "study"
+    REPORT = "report"

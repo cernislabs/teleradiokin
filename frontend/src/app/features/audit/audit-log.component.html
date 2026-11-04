@@ -1,0 +1,72 @@
+<div class="page">
+  <header class="page-head">
+    <a routerLink="/" class="btn-link" i18n="@@audit.back">← Dashboard</a>
+    <h1 i18n="@@audit.title">Audit trail</h1>
+    <div class="spacer"></div>
+  </header>
+  <p class="subtitle" i18n="@@audit.subtitle">
+    Who accessed or changed each patient, study, and report.
+  </p>
+
+  <div class="filters">
+    <label>
+      <span i18n="@@audit.filter.action">Action</span>
+      <select [ngModel]="action()" (ngModelChange)="action.set($event); load()">
+        <option value="">Any</option>
+        @for (a of actions; track a) {
+          <option [value]="a">{{ a }}</option>
+        }
+      </select>
+    </label>
+    <label>
+      <span i18n="@@audit.filter.entity">Record type</span>
+      <select [ngModel]="entity()" (ngModelChange)="entity.set($event); load()">
+        <option value="">Any</option>
+        @for (e of entities; track e) {
+          <option [value]="e">{{ e }}</option>
+        }
+      </select>
+    </label>
+    <button (click)="load()" i18n="@@audit.refresh">Refresh</button>
+  </div>
+
+  @if (loading()) {
+    <p i18n="@@audit.loading">Loading…</p>
+  } @else if (error()) {
+    <p class="error" role="alert">{{ error() }}</p>
+  } @else if (events().length === 0) {
+    <p class="empty" i18n="@@audit.empty">No audit events match these filters.</p>
+  } @else {
+    <table class="audit">
+      <thead>
+        <tr>
+          <th i18n="@@audit.col.time">Time (UTC)</th>
+          <th i18n="@@audit.col.actor">User</th>
+          <th i18n="@@audit.col.role">Role</th>
+          <th i18n="@@audit.col.action">Action</th>
+          <th i18n="@@audit.col.entity">Record</th>
+          <th i18n="@@audit.col.detail">Detail</th>
+          <th i18n="@@audit.col.ip">IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (ev of events(); track ev.id) {
+          <tr>
+            <td>{{ ev.created_at | date: 'yyyy-MM-dd HH:mm:ss' : 'UTC' }}</td>
+            <td>{{ ev.actor_email }}</td>
+            <td>{{ ev.actor_role }}</td>
+            <td><span class="badge" [attr.data-action]="ev.action">{{ ev.action }}</span></td>
+            <td>
+              {{ ev.entity_type }}
+              @if (ev.entity_id) {
+                <small class="eid">{{ ev.entity_id.slice(0, 8) }}</small>
+              }
+            </td>
+            <td class="detail">{{ summarize(ev.detail) }}</td>
+            <td class="ip">{{ ev.ip_address ?? '—' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</div>

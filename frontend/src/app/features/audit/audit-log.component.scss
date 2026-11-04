@@ -1,0 +1,129 @@
+.page {
+  max-width: 1100px;
+  margin: 2rem auto;
+  padding: 0 1.5rem;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+
+  h1 {
+    margin: 0;
+    color: #0f172a;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+}
+
+.btn-link {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.subtitle {
+  color: #64748b;
+  margin: 0.25rem 0 1.25rem;
+}
+
+.filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.75rem;
+    color: #64748b;
+    gap: 0.25rem;
+  }
+
+  select {
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    min-width: 140px;
+  }
+
+  button {
+    padding: 0.45rem 0.9rem;
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+}
+
+.empty,
+.error {
+  color: #64748b;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+table.audit {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+
+  th,
+  td {
+    text-align: left;
+    padding: 0.5rem 0.7rem;
+    border-bottom: 1px solid #eef2f7;
+    vertical-align: top;
+  }
+
+  th {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .eid {
+    color: #94a3b8;
+    font-family: monospace;
+    margin-left: 0.3rem;
+  }
+
+  .detail {
+    color: #475569;
+    max-width: 280px;
+    word-break: break-word;
+  }
+
+  .ip {
+    font-family: monospace;
+    color: #64748b;
+  }
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #e2e8f0;
+  color: #334155;
+
+  &[data-action='create'] { background: #dcfce7; color: #166534; }
+  &[data-action='update'] { background: #fef9c3; color: #854d0e; }
+  &[data-action='finalize'] { background: #dbeafe; color: #1e40af; }
+  &[data-action='download'] { background: #ede9fe; color: #5b21b6; }
+  &[data-action='login'] { background: #f1f5f9; color: #475569; }
+}

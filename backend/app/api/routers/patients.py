@@ -5,14 +5,15 @@ writes are limited to Admin and ReferringClinician.
 """
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, require_roles
-from app.domain.enums import UserRole
+from app.domain.enums import AuditAction, AuditEntity, UserRole
 from app.domain.patient import PatientCreate, PatientRead, PatientUpdate
 from app.infrastructure.database import get_session
 from app.infrastructure.models.user import User
+from app.services import audit
 from app.services.patients import (
     create_patient,
     get_patient,
@@ -37,7 +38,8 @@ async def list_all(
 @router.post("", response_model=PatientRead, status_code=status.HTTP_201_CREATED)
 async def create(
     payload: PatientCreate,
-    _: User = Depends(_write_roles),
+    request: Request,
+    current_user: User = Depends(_write_roles),
     session: AsyncSession = Depends(get_session),
 ):
     if await get_patient_by_mrn(session, payload.mrn) is not None:
@@ -45,18 +47,29 @@ async def create(
             status_code=status.HTTP_409_CONFLICT,
             detail="A patient with this MRN already exists",
         )
-    return await create_patient(session, payload)
+    patient = await create_patient(session, payload)
+    await audit.record(
+        session, actor=current_user, action=AuditAction.CREATE,
+        entity_type=AuditEntity.PATIENT, entity_id=patient.id, request=request,
+        detail={"mrn": patient.mrn},
+    )
+    return patient
 
 
 @router.get("/{patient_id}", response_model=PatientRead)
 async def get_one(
     patient_id: uuid.UUID,
-    _: User = Depends(get_current_user),
+    request: Request,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     patient = await get_patient(session, patient_id)
     if patient is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found")
+    await audit.record(
+        session, actor=current_user, action=AuditAction.VIEW,
+        entity_type=AuditEntity.PATIENT, entity_id=patient.id, request=request,
+    )
     return patient
 
 
@@ -64,10 +77,16 @@ async def get_one(
 async def update(
     patient_id: uuid.UUID,
     payload: PatientUpdate,
-    _: User = Depends(_write_roles),
+    request: Request,
+    current_user: User = Depends(_write_roles),
     session: AsyncSession = Depends(get_session),
 ):
     patient = await get_patient(session, patient_id)
     if patient is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found")
-    return await update_patient(session, patient, payload)
+    updated = await update_patient(session, patient, payload)
+    await audit.record(
+        session, actor=current_user, action=AuditAction.UPDATE,
+        entity_type=AuditEntity.PATIENT, entity_id=updated.id, request=request,
+    )
+    return updated

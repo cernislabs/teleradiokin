@@ -260,6 +260,46 @@ status model and PDF leave room to add these without reworking the data model.
 
 ---
 
+## ADR-012 — Audit trail design
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context.** The MVP must record *who accessed or changed each patient, study, and report,
+with timestamps*, queryable by an administrator. A decision is needed on the audit data
+model, how events are captured without coupling to every service, and how recording failures
+are handled.
+
+**Decision.**
+- **A single append-only `audit_events` table** (migration `0005`) modeled loosely on the
+  FHIR *AuditEvent* resource: `action` (login/view/create/update/finalize/download),
+  `entity_type` (session/patient/study/report) + `entity_id`, the actor (`actor_id` FK with
+  `ON DELETE SET NULL`), a **denormalized `actor_email`/`actor_role` snapshot** so the trail
+  survives user deletion, source `ip_address`, an optional JSONB `detail`, and the base
+  `created_at` as the event time. Indexed on actor, entity type, entity id, and time.
+- **Capture at the API boundary.** Events are recorded in the routers, where the authenticated
+  user and request (IP) are available, after the primary action succeeds — not inside domain
+  services (which stay persistence-agnostic). Instrumented flows: login; patient
+  view/create/update; study upload/view/file-download; report create/finalize/update and PDF
+  download.
+- **Best-effort, non-blocking.** `audit.record(...)` catches and rolls back its own errors so
+  an audit-write failure can never break the clinical action it accompanies.
+- **Admin-only query.** `GET /api/audit` (role `Admin`) returns events newest-first with
+  filters (actor, action, entity type/id, time window) and pagination; an Angular admin
+  audit-log view consumes it.
+
+**Why.** Access logging of PHI is a baseline expectation for medical systems (and a
+prerequisite for the deferred HIPAA/local-regulation work); the ACR teleradiology practice
+parameters likewise treat auditability of the report and its handling as part of the record.
+An append-only, denormalized log keeps the trail intact and independent of mutable account
+state, and recording at the boundary keeps instrumentation in one layer.
+
+**Trade-off / deferred.** Boundary capture means only actions that reach an instrumented
+endpoint are logged (not, e.g., direct DB edits or background-task internals); failed/denied
+attempts (401/403) and failed logins are not yet recorded; no tamper-evidence (hash chaining),
+retention policy, or export. The schema (action/entity enums + JSONB detail) extends to these
+without a rework.
+
+---
+
 <!-- Upcoming ADRs (added as iterations land):
-     ADR-012 Audit trail design
+     (none pending)
 -->

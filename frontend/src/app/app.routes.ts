@@ -16,6 +16,12 @@ export const routes: Routes = [
   { path: 'patients/:id', component: PatientDetailComponent, canActivate: [authGuard] },
   { path: 'worklist', component: WorklistComponent, canActivate: [authGuard] },
   {
+    path: 'audit',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/audit/audit-log.component').then((m) => m.AuditLogComponent),
+  },
+  {
     // Lazy-loaded so the cornerstone viewer libraries stay out of the initial bundle.
     path: 'studies/:id/view',
     canActivate: [authGuard],

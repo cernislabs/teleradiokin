@@ -201,6 +201,11 @@ To report: in the viewer, the radiologist writes **findings** and **impression**
 draft, then **finalizes** (which locks the report and marks the study `Reported`). The
 referring clinician opens the same study and views or prints the report as a **PDF**.
 
+To audit: log in as the **admin** and open **View the audit trail** from the dashboard (or
+`GET /api/audit`). It shows who accessed or changed each patient, study, and report — with
+actor, role, action, record, source IP, and UTC timestamp — filterable by action and record
+type. The audit log is admin-only; other roles receive `403`.
+
 > Secrets (JWT signing key, database credentials, seed passwords) are read from environment
 > variables and are **not** committed to source. Configure them in `.env`.
 

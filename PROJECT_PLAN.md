@@ -12,8 +12,8 @@
 - **Target context:** Central Africa — low bandwidth, intermittent connectivity, modest hardware
 - **Language:** All code/docs in English; frontend strings kept i18n-extractable (French later)
 - **Last updated:** 2026-11-04
-- **Current status:** `MILESTONE PAUSE` — Iteration 5 (Reports) DONE & verified; awaiting user test before Iteration 6 (Audit Trail)
-- **Active iteration:** Iteration 6 — Audit Trail (next)
+- **Current status:** `IN PROGRESS` — Iteration 6 (Audit Trail) DONE & verified; next is Iteration 7 (Hardening, Tests & Docs)
+- **Active iteration:** Iteration 7 — Hardening, Tests & Docs (next)
 - **Cadence:** build phases back-to-back; **pause at milestones** (after Auth, after Upload, after Reports) for the user to run `docker-compose up` and test
 - **Env note:** no local Python / .NET / Angular toolchain — all build/test/run goes through Docker (python:3.12-slim, node, compose)
 
@@ -123,11 +123,12 @@ Cross-cutting: **clean layered architecture + DI**, **security**, **tests**, **d
 - [x] Tests for report lifecycle & authorization (33 pass); live-verified finalize + PDF via proxy
 - [x] ADR-011: report model & delivery approach (ACR/RSNA structured-reporting rationale)
 
-### Iteration 6 — Audit Trail (E6) — `TODO`
-- [ ] Audit-log service; records actor, action, entity, timestamp
-- [ ] Applied to patient, study, report access & changes
-- [ ] Audit records queryable by Admin
-- [ ] Tests covering audit capture on key flows
+### Iteration 6 — Audit Trail (E6) — `DONE`
+- [x] `AuditEvent` entity (actor id/email/role, action, entity type/id, IP, JSONB detail, timestamp) + migration `0005`
+- [x] Best-effort audit service (`record` never breaks the audited action) + filtered/paginated query
+- [x] Applied to login, patient view/create/update, study upload/view/download, report create/finalize/update/PDF
+- [x] Admin-only query endpoint (`GET /api/audit`, filters: actor/action/entity/time) + Angular admin audit-log view
+- [x] Tests covering audit capture + admin-only access (38 pass); live-verified trail via proxy, non-admin 403
 
 ### Iteration 7 — Hardening, Tests & Docs — `TODO`
 - [ ] End-to-end smoke test: upload → review → report
@@ -190,6 +191,7 @@ Executed immediately (see ADR-004):
 | 2026-11-04 | 3 — Upload | Chunked/resumable upload, DICOM+image validation, `Study` model + migration `0003`, async preview pipeline, preview endpoint, Angular upload UI. Live: chunked DICOM → Pending+metadata+JPEG preview via proxy | ✅ 27 pytest + frontend build + live upload→preview green | **milestone pause** → It.4 Worklist/Viewer |
 | 2026-11-04 | 4 — Worklist/Viewer | Pending worklist, cornerstone viewer (lazy, W/L+pan+zoom), `GET /studies/{id}/file` endpoint, dashboard link. Live: worklist + DICOM file served via proxy | ✅ 28 pytest + frontend build (initial 378 kB, viewer lazy) + live checks green | It.5 Reports |
 | 2026-11-04 | 5 — Reports | `Report` model + migration `0004`, draft→final lifecycle (locks + study→Reported), server-rendered PDF, Angular report panel. Live: finalize + clinician PDF via proxy; edit-after-final 403 | ✅ 33 pytest + frontend build + live report/PDF green | **milestone pause** → It.6 Audit |
+| 2026-11-04 | 6 — Audit | `AuditEvent` model + migration `0005`, best-effort audit service, instrumented login/patient/study/report flows, admin-only `GET /api/audit` + Angular admin audit-log view. Live: trail (login/view/create w/ actor+IP) via proxy; non-admin 403 | ✅ 38 pytest + frontend build + live audit green | It.7 Hardening |
 
 ---
 

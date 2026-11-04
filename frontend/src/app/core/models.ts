@@ -90,6 +90,22 @@ export interface Report {
   updated_at: string | null;
 }
 
+export type AuditAction = 'login' | 'view' | 'create' | 'update' | 'finalize' | 'download';
+export type AuditEntity = 'session' | 'patient' | 'study' | 'report';
+
+export interface AuditEvent {
+  id: string;
+  actor_id: string | null;
+  actor_email: string;
+  actor_role: UserRole;
+  action: AuditAction;
+  entity_type: AuditEntity;
+  entity_id: string | null;
+  ip_address: string | null;
+  detail: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export type EncounterStatus = 'planned' | 'in-progress' | 'finished' | 'cancelled';
 
 export interface Encounter {

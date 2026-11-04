@@ -3,6 +3,7 @@
 Import model modules here so Alembic's autogenerate and metadata discovery see
 them. Entity models are added as features land (patients, studies, reports, audit).
 """
+from app.infrastructure.models.audit import AuditEvent
 from app.infrastructure.models.base import Base, TimestampedBase
 from app.infrastructure.models.patient import Encounter, Patient
 from app.infrastructure.models.report import Report
@@ -18,4 +19,5 @@ __all__ = [
     "Study",
     "UploadSession",
     "Report",
+    "AuditEvent",
 ]

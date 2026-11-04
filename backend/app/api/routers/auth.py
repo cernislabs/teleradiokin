@@ -1,11 +1,13 @@
 """Authentication endpoints: login, token refresh, current user."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.domain.auth import LoginRequest, Token, UserRead
+from app.domain.enums import AuditAction, AuditEntity
 from app.infrastructure.database import get_session
 from app.infrastructure.models.user import User
+from app.services import audit
 from app.services.auth import authenticate, issue_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -14,6 +16,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @router.post("/login", response_model=Token)
 async def login(
     payload: LoginRequest,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> Token:
     user = await authenticate(session, payload.email, payload.password)
@@ -22,6 +25,10 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
+    await audit.record(
+        session, actor=user, action=AuditAction.LOGIN,
+        entity_type=AuditEntity.SESSION, entity_id=user.id, request=request,
+    )
     return Token(access_token=issue_token(user))
 
 

@@ -21,9 +21,11 @@
       <p>
         <a routerLink="/worklist" i18n="@@dashboard.worklistLink">Open the radiologist worklist →</a>
       </p>
-      <p i18n="@@dashboard.placeholder">
-        Structured reporting will appear here as it is built.
-      </p>
+      @if (u.role === 'Admin') {
+        <p>
+          <a routerLink="/audit" i18n="@@dashboard.auditLink">View the audit trail →</a>
+        </p>
+      }
     </section>
   } @else {
     <p i18n="@@dashboard.loading">Loading…</p>

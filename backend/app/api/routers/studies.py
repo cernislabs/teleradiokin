@@ -14,12 +14,13 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_storage, require_roles
-from app.domain.enums import StudyStatus, UserRole
+from app.domain.enums import AuditAction, AuditEntity, StudyStatus, UserRole
 from app.domain.study import StudyRead, UploadInit, UploadSessionRead
 from app.infrastructure.database import get_session
 from app.infrastructure.models.study import UploadSession
 from app.infrastructure.models.user import User
 from app.infrastructure.storage import StudyStorage
+from app.services import audit
 from app.services import studies as svc
 
 router = APIRouter(prefix="/api/studies", tags=["studies"])
@@ -98,7 +99,7 @@ async def complete_upload(
     upload_id: uuid.UUID,
     request: Request,
     background: BackgroundTasks,
-    _: User = Depends(_write_roles),
+    current_user: User = Depends(_write_roles),
     session: AsyncSession = Depends(get_session),
     storage: StudyStorage = Depends(get_storage),
 ):
@@ -107,6 +108,12 @@ async def complete_upload(
         study = await svc.complete_upload(session, upload, storage=storage)
     except svc.UploadError as err:
         raise _handle(err)
+
+    await audit.record(
+        session, actor=current_user, action=AuditAction.CREATE,
+        entity_type=AuditEntity.STUDY, entity_id=study.id, request=request,
+        detail={"filename": study.original_filename, "patient_id": str(study.patient_id)},
+    )
 
     # Extract metadata + preview off the request path.
     background.add_task(
@@ -133,19 +140,25 @@ async def list_studies(
 @router.get("/{study_id}", response_model=StudyRead)
 async def get_study(
     study_id: uuid.UUID,
-    _: User = Depends(get_current_user),
+    request: Request,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     study = await svc.get_study(session, study_id)
     if study is None:
         raise HTTPException(status_code=404, detail="Study not found")
+    await audit.record(
+        session, actor=current_user, action=AuditAction.VIEW,
+        entity_type=AuditEntity.STUDY, entity_id=study.id, request=request,
+    )
     return study
 
 
 @router.get("/{study_id}/file")
 async def get_file(
     study_id: uuid.UUID,
-    _: User = Depends(get_current_user),
+    request: Request,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     storage: StudyStorage = Depends(get_storage),
 ):
@@ -153,6 +166,10 @@ async def get_file(
     study = await svc.get_study(session, study_id)
     if study is None:
         raise HTTPException(status_code=404, detail="Study not found")
+    await audit.record(
+        session, actor=current_user, action=AuditAction.DOWNLOAD,
+        entity_type=AuditEntity.STUDY, entity_id=study.id, request=request,
+    )
     media_type = "application/dicom" if study.is_dicom else (
         study.content_type or "application/octet-stream"
     )
