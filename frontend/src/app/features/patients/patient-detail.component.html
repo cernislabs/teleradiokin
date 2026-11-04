@@ -1,0 +1,113 @@
+<div class="page">
+  <header class="page-head">
+    <h1 i18n="@@patients.detail.title">Patient</h1>
+    <div class="spacer"></div>
+    <a routerLink="/patients" class="btn-link" i18n="@@patients.backToList">← All patients</a>
+  </header>
+
+  @if (patient(); as p) {
+    <section class="detail-card">
+      <dl>
+        <dt i18n="@@patients.col.mrn">MRN</dt><dd>{{ p.mrn }}</dd>
+        <dt i18n="@@patients.col.name">Name</dt><dd>{{ p.family_name }}, {{ p.given_name }}</dd>
+        <dt i18n="@@patients.col.sex">Sex</dt><dd>{{ p.sex }}</dd>
+        <dt i18n="@@patients.col.birth">Birth date</dt><dd>{{ p.birth_date ?? '—' }}</dd>
+        <dt i18n="@@patients.detail.phone">Phone</dt><dd>{{ p.phone ?? '—' }}</dd>
+        <dt i18n="@@patients.detail.consent">Consent</dt>
+        <dd>{{ p.consent_acknowledged ? '✓' : '✗' }}</dd>
+      </dl>
+    </section>
+
+    <header class="page-head">
+      <h2 i18n="@@encounters.title">Encounters</h2>
+    </header>
+
+    @if (encounters().length === 0) {
+      <p class="empty" i18n="@@encounters.empty">No encounters yet.</p>
+    } @else {
+      <table class="data">
+        <thead>
+          <tr>
+            <th i18n="@@encounters.col.reason">Reason</th>
+            <th i18n="@@encounters.col.status">Status</th>
+            <th i18n="@@encounters.col.created">Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (e of encounters(); track e.id) {
+            <tr>
+              <td>{{ e.reason ?? '—' }}</td>
+              <td>{{ e.status }}</td>
+              <td>{{ e.created_at | date: 'short' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    @if (canWrite()) {
+      <form class="form" (ngSubmit)="addEncounter(reasonInput.value); reasonInput.value=''">
+        <label i18n="@@encounters.add.reason">
+          New encounter reason
+          <input #reasonInput name="reason" />
+        </label>
+        <div class="actions">
+          <button type="submit" class="btn" i18n="@@encounters.add.submit">Add encounter</button>
+        </div>
+      </form>
+    }
+
+    <header class="page-head">
+      <h2 i18n="@@studies.title">Imaging studies</h2>
+    </header>
+
+    @if (canWrite()) {
+      <div class="form">
+        <label i18n="@@studies.upload.encounter">
+          Encounter
+          <select [ngModel]="selectedEncounter()" (ngModelChange)="selectedEncounter.set($event)" name="enc">
+            @for (e of encounters(); track e.id) {
+              <option [value]="e.id">{{ e.reason ?? e.id }}</option>
+            }
+          </select>
+        </label>
+        <label i18n="@@studies.upload.file">
+          DICOM or image file
+          <input type="file" accept=".dcm,image/*"
+                 [disabled]="uploading() || encounters().length === 0"
+                 (change)="onFileSelected($event)" />
+        </label>
+        @if (uploading()) {
+          <p><span i18n="@@studies.upload.progress">Uploading…</span> {{ progress() }}%</p>
+        }
+        @if (uploadError()) {
+          <p class="error" role="alert">{{ uploadError() }}</p>
+        }
+      </div>
+    }
+
+    @if (studies().length === 0) {
+      <p class="empty" i18n="@@studies.empty">No studies uploaded yet.</p>
+    } @else {
+      <div class="study-grid">
+        @for (s of studies(); track s.id) {
+          <div class="study-card">
+            @if (previews()[s.id]) {
+              <img [src]="previews()[s.id]" alt="study preview" />
+            } @else {
+              <div class="thumb-placeholder">{{ s.status }}</div>
+            }
+            <div class="study-meta">
+              <strong>{{ s.modality ?? '—' }}</strong>
+              <span class="status">{{ s.status }}</span>
+              <small>{{ s.original_filename }}</small>
+              <small>{{ s.created_at | date: 'short' }}</small>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  } @else {
+    <p i18n="@@common.loading">Loading…</p>
+  }
+</div>

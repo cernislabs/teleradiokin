@@ -1,0 +1,29 @@
+<header class="topbar">
+  <span class="brand" i18n="@@app.brand">Teleradiokin</span>
+  <div class="spacer"></div>
+  @if (user(); as u) {
+    <span class="who">{{ u.full_name }} · <strong>{{ u.role }}</strong></span>
+  }
+  <button class="logout" (click)="logout()" i18n="@@app.logout">Sign out</button>
+</header>
+
+<main class="content">
+  @if (user(); as u) {
+    <h1 i18n="@@dashboard.welcome">Welcome, {{ u.full_name }}</h1>
+    <p class="role-note" i18n="@@dashboard.roleNote">
+      You are signed in as <strong>{{ u.role }}</strong>.
+    </p>
+
+    <section class="next">
+      <p>
+        <a routerLink="/patients" i18n="@@dashboard.patientsLink">Go to patient records →</a>
+      </p>
+      <p i18n="@@dashboard.placeholder">
+        Study uploads, the radiologist worklist, and reporting will appear here
+        as they are built.
+      </p>
+    </section>
+  } @else {
+    <p i18n="@@dashboard.loading">Loading…</p>
+  }
+</main>

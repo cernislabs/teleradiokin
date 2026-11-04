@@ -18,15 +18,16 @@ and graceful retries.
 ## What it does (MVP scope)
 
 - **Authentication & roles** — `Admin`, `ReferringClinician` (uploads studies, requests
-  reads), `Radiologist` (reviews studies, writes reports). ASP.NET Core Identity + JWT.
+  reads), `Radiologist` (reviews studies, writes reports). JWT-based auth.
 - **Patient & encounter records** — demographics, identifiers, consent acknowledgment, and
-  encounters linked to one or more imaging studies. Data model is *FHIR-leaning* (extensible
-  toward HL7 FHIR without implementing the full standard).
+  encounters linked to one or more imaging studies. Data model is *FHIR-leaning*, stored
+  relationally with **JSONB** for flexible/extensible fields.
 - **Imaging upload** — DICOM and common image formats, validated and stored outside the
   database behind a storage abstraction, with DICOM metadata extraction (modality, study
-  date, body part, accession number) and lightweight compressed previews.
+  date, body part, accession number) and lightweight compressed previews generated
+  **asynchronously** so uploads never block the server.
 - **Worklist & review** — radiologists see a queue of pending studies, open one, view the
-  images in a browser viewer, and submit a report.
+  images in a browser DICOM viewer, and submit a report.
 - **Reports** — structured findings, impression, and status (draft / final), linked to the
   study and patient, viewable and printable by the referring clinician.
 - **Audit trail** — who accessed or changed each patient record, study, and report, with
@@ -38,84 +39,159 @@ and graceful retries.
 
 | Layer | Technology |
 |-------|------------|
-| Backend | ASP.NET Core Web API (.NET 8) |
-| Frontend | Angular |
-| Database | PostgreSQL (EF Core + migrations) |
-| Auth | ASP.NET Core Identity + JWT |
-| DICOM | fo-dicom (Fellow Oak) for metadata + preview rendering |
-| Storage | Local filesystem behind an `IStudyStorage` interface (S3-compatible target later) |
-| Orchestration | Docker Compose (database + backend + frontend) |
+| Language / runtime | Python 3.12+ |
+| Web framework | FastAPI + Uvicorn (ASGI) |
+| Validation | Pydantic v2 / pydantic-settings |
+| ORM & migrations | async SQLAlchemy 2.0 + Alembic |
+| Database | PostgreSQL 16 (JSONB for FHIR-leaning records) |
+| Auth | JWT (python-jose) + bcrypt password hashing (passlib) |
+| DICOM / imaging | pydicom + pylibjpeg (+ Pillow / NumPy for previews) |
+| Async processing | FastAPI `BackgroundTasks` + `asyncio.to_thread` for CPU-heavy work |
+| Frontend | Angular (served by nginx; `/api` reverse-proxied to the backend) |
+| Orchestration | Docker Compose (db + backend + frontend) |
 
 ---
 
 ## Architecture (brief)
 
-The backend follows clean layering with dependency injection, kept proportionate to an MVP:
+The backend follows a strict Clean Architecture; dependencies point inward
+(api → services → domain; infrastructure implements the ports the services depend on):
 
 ```
 backend/
-├── Teleradio.Api            # HTTP controllers, auth wiring, Swagger, DI composition root
-├── Teleradio.Application    # use-case services, DTOs, interfaces (IStudyStorage, IAuditLog, …)
-├── Teleradio.Domain         # entities, enums, domain rules — no external dependencies
-└── Teleradio.Infrastructure # EF Core, Identity, filesystem storage, DICOM extraction
+├── app/
+│   ├── api/            # FastAPI routers, endpoints, HTTP handling
+│   ├── core/           # settings, JWT security, DI dependencies
+│   ├── domain/         # Pydantic schemas, entities, enums (no DB dependencies)
+│   ├── services/       # business logic, DICOM extraction, background tasks
+│   ├── infrastructure/ # SQLAlchemy models, async DB session, filesystem/storage adapters
+│   └── main.py         # FastAPI app factory + middleware
+├── migrations/         # Alembic environment (async)
+├── tests/
+├── requirements.txt
+└── Dockerfile
 ```
 
-- **Domain** has no dependencies.
-- **Application** depends only on Domain and defines the interfaces infrastructure implements.
-- **Infrastructure** implements those interfaces (database, storage, DICOM).
-- **Api** is thin — controllers delegate to application services; all wiring via DI.
-
-The frontend is an Angular app with role-based views (login, patient records, upload,
-radiologist worklist/viewer, report editor and print view). User-facing strings are kept
-isolated so they can be extracted into an i18n layer when French support is added.
-
 ```
-.
-├── backend/            # ASP.NET Core solution (4 projects above)
-├── frontend/           # Angular app
-├── tests/              # unit, integration, end-to-end smoke tests
-├── docker-compose.yml  # postgres + backend + frontend
-├── docs/decisions.md   # architecture decision records
-├── PROJECT_PLAN.md     # living agile project tracker
-└── README.md
+                 ┌─────────────┐      /api (reverse proxy)      ┌──────────────────┐
+  Browser ─────► │  Angular    │ ─────────────────────────────►│  FastAPI /Uvicorn │
+                 │  (nginx)    │◄───────────────────────────── │   :8000 (ASGI)    │
+                 └─────────────┘                                 └────────┬─────────┘
+                                                                          │
+                                        async SQLAlchemy │ BackgroundTasks │ filesystem
+                                                          ▼                ▼            ▼
+                                                   ┌────────────┐   DICOM pipeline   study
+                                                   │ PostgreSQL │   (pydicom →       storage
+                                                   │  (JSONB)   │    preview JPEG)   volume
+                                                   └────────────┘
 ```
+
+- **domain** has no framework/DB dependencies — just Pydantic schemas, entities, enums.
+- **services** hold business logic and the DICOM pipeline; CPU-heavy pixel work runs off
+  the event loop (`asyncio.to_thread` / `BackgroundTasks`) so chunked uploads stay responsive.
+- **infrastructure** implements storage and persistence (async SQLAlchemy, filesystem
+  adapter with an S3-ready interface).
+- **api** is thin: routers validate input and delegate to services.
+
+The frontend is an Angular app with role-based views. User-facing strings are kept isolated
+so they can be extracted into an i18n layer when French support is added.
 
 ---
 
 ## Running locally
 
-### Prerequisites
-- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
+Everything runs in containers, so the steps are the same on every OS — only how you install
+Docker differs. All commands use Docker Compose **v2** (`docker compose`, with a space). If you
+have the older standalone binary, use `docker-compose` (with a hyphen) instead.
+
+### Prerequisites by operating system
+
+**Linux**
+- Install [Docker Engine](https://docs.docker.com/engine/install/) + the Compose plugin for
+  your distro (e.g. `sudo apt-get install docker.io docker-compose-plugin`).
+- Start Docker: `sudo systemctl enable --now docker`.
+- Optional (run without `sudo`): `sudo usermod -aG docker $USER`, then log out/in.
+
+**macOS** (Intel or Apple Silicon)
+- Install [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
+  (or `brew install --cask docker`), then launch Docker Desktop once so the engine starts.
+
+**Windows 10/11**
+- Install [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
+  with the **WSL 2** backend (recommended), then launch it once.
+- Run the commands below from **PowerShell**, **Windows Terminal**, or a WSL shell.
+
+Verify your install on any OS:
+
+```bash
+docker --version
+docker compose version
+```
 
 ### Start the stack
 
-```bash
-# 1. Copy the environment template and adjust secrets if needed
-cp .env.example .env
+From the project root:
 
-# 2. Build and start database, backend, and frontend
-docker-compose up --build
+```bash
+# 1. Create your local env file from the template (edit secrets if you like).
+#    Linux / macOS / WSL / Git Bash:
+cp .env.example .env
+#    Windows PowerShell:
+copy .env.example .env
+
+# 2. Build images and start all three services (add -d to run in the background).
+docker compose up --build
 ```
 
-Once running:
+First run downloads base images and builds the backend/frontend, so it takes a few minutes.
+Migrations and seed accounts are applied automatically once the database is healthy.
 
 | Service | URL |
 |---------|-----|
 | Frontend | http://localhost:4200 |
-| Backend API | http://localhost:8080 |
-| API docs (Swagger) | http://localhost:8080/swagger |
+| Backend API | http://localhost:8000 |
+| API docs (Swagger) | http://localhost:8000/swagger |
+| Health probe | http://localhost:8000/health |
 
-Database migrations and seed data are applied automatically on backend startup.
+### Stop / shut down
 
-### Seed accounts
+```bash
+# If running in the foreground: press Ctrl+C, then:
+docker compose down          # stop and remove containers + network (keeps the database)
 
-| Role | Username | Password |
-|------|----------|----------|
-| Admin | `admin` | _(see `.env.example`)_ |
-| Radiologist | `radiologist` | _(see `.env.example`)_ |
-| Referring clinician | `clinician` | _(see `.env.example`)_ |
+docker compose down -v       # also delete the database volume (full reset / re-seed)
 
-A sample patient record is seeded for demonstration.
+docker compose stop          # just pause containers without removing them
+docker compose start         # resume them again
+```
+
+Your data persists in named volumes between `up`/`down`. Use `down -v` only when you want a
+clean database (this wipes users, patients, studies, and uploaded files).
+
+### Troubleshooting
+
+- **Port already in use** (4200 / 8000 / 5432): stop the other process or change the host port
+  in `docker-compose.yml`.
+- **Windows line endings**: clone with Git's default autocrlf, or ensure `backend/entrypoint.sh`
+  keeps LF endings (it must stay LF to run inside the Linux container).
+- **"Cannot connect to the Docker daemon"**: Docker isn't running — start Docker Desktop
+  (macOS/Windows) or `sudo systemctl start docker` (Linux).
+
+Alembic migrations run automatically on backend startup (via the container entrypoint), and
+seed accounts are created idempotently on first boot.
+
+**Seed accounts** (passwords come from `.env`; defaults shown are from `.env.example`):
+
+| Role | Email | Default password |
+|------|-------|------------------|
+| Admin | `admin@teleradiokin.org` | `Admin!2345` |
+| Radiologist | `radiologist@teleradiokin.org` | `Radio!2345` |
+| Referring clinician | `clinician@teleradiokin.org` | `Clinic!2345` |
+
+Log in at http://localhost:4200. A sample patient (`MRN-0001`) with an encounter is seeded.
+To try an upload: open the patient, pick an encounter, and upload a DICOM (`.dcm`) **or** an
+ordinary JPEG/PNG (both are accepted) — it uploads in resumable chunks, is processed in the
+background, and a compressed preview thumbnail appears when its status reaches `Pending`.
 
 > Secrets (JWT signing key, database credentials, seed passwords) are read from environment
 > variables and are **not** committed to source. Configure them in `.env`.
@@ -125,29 +201,26 @@ A sample patient record is seeded for demonstration.
 ## Testing
 
 ```bash
-# Backend unit + integration tests
-dotnet test
-
-# Frontend unit tests
-cd frontend && npm test
+cd backend
+pip install -r requirements-dev.txt
+pytest
 ```
 
-- **Unit tests** cover domain and application/service logic.
-- **Integration tests** cover the API and the upload pipeline.
+- **Unit tests** cover domain logic and the DICOM pipeline (metadata extraction, preview
+  generation, validity checks).
+- **Integration tests** cover the API and the upload pipeline (SQLite-backed for speed).
 - **End-to-end smoke test** exercises the upload → review → report flow.
 
 ---
 
 ## Intentionally deferred
 
-These are out of scope for the MVP and documented so expectations are clear:
-
 - **French localization** — UI strings are kept extraction-ready, but no i18n layer yet.
-- **Full HL7 FHIR** — the data model leans toward FHIR for extensibility but is not compliant.
+- **Full HL7 FHIR** — the data model leans toward FHIR (JSONB) for extensibility but is not compliant.
 - **Production hosting** — TLS termination, scaling, backups, and observability are not addressed.
 - **Regulatory compliance** — HIPAA and local health-data regulations are not implemented.
 - **PACS integration** — no DICOM C-STORE/C-FIND or PACS connectivity.
-- **Full-fidelity DICOM web viewer** — the MVP uses compressed server-generated previews.
+- **ML/data-science workloads** — the Python stack is chosen to enable these later; none are built yet.
 
 ---
 

@@ -1,0 +1,28 @@
+# --- Secrets ---
+.env
+
+# --- .NET ---
+bin/
+obj/
+*.user
+[Dd]ebug/
+[Rr]elease/
+TestResults/
+*.trx
+
+# --- Node / Angular ---
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+
+# --- Study storage (local dev) ---
+backend/storage/
+storage/
+
+# --- IDE / OS ---
+.vs/
+.vscode/
+.idea/
+*.swp
+.DS_Store

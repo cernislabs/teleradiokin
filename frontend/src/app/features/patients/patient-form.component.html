@@ -1,0 +1,58 @@
+<div class="page">
+  <header class="page-head">
+    <h1 i18n="@@patients.form.title">New patient</h1>
+    <div class="spacer"></div>
+    <a routerLink="/patients" class="btn-link" i18n="@@common.cancel">Cancel</a>
+  </header>
+
+  <form class="form" [formGroup]="form" (ngSubmit)="submit()">
+    <label i18n="@@patients.form.mrn">
+      Medical Record Number
+      <input formControlName="mrn" />
+    </label>
+
+    <label i18n="@@patients.form.family">
+      Family name
+      <input formControlName="family_name" />
+    </label>
+
+    <label i18n="@@patients.form.given">
+      Given name
+      <input formControlName="given_name" />
+    </label>
+
+    <label i18n="@@patients.form.birth">
+      Birth date
+      <input type="date" formControlName="birth_date" />
+    </label>
+
+    <label i18n="@@patients.form.sex">
+      Sex
+      <select formControlName="sex">
+        @for (s of sexes; track s) {
+          <option [value]="s">{{ s }}</option>
+        }
+      </select>
+    </label>
+
+    <label i18n="@@patients.form.phone">
+      Phone
+      <input formControlName="phone" />
+    </label>
+
+    <label class="checkbox">
+      <input type="checkbox" formControlName="consent_acknowledged" />
+      <span i18n="@@patients.form.consent">Patient has acknowledged consent</span>
+    </label>
+
+    @if (error()) {
+      <p class="error" role="alert">{{ error() }}</p>
+    }
+
+    <div class="actions">
+      <button type="submit" class="btn" [disabled]="form.invalid || submitting()">
+        <span i18n="@@patients.form.save">Create patient</span>
+      </button>
+    </div>
+  </form>
+</div>

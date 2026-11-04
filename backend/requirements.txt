@@ -1,0 +1,29 @@
+# --- Web framework / ASGI ---
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+
+# --- Validation / settings ---
+pydantic==2.9.2
+pydantic-settings==2.6.1
+email-validator==2.2.0
+
+# --- Database (async) ---
+SQLAlchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# --- Security / auth ---
+python-jose[cryptography]==3.3.0
+passlib==1.7.4
+# Pin bcrypt: passlib 1.7.4 is incompatible with bcrypt >= 4.1 (backend probe
+# fails with "module 'bcrypt' has no attribute '__about__'").
+bcrypt==4.0.1
+
+# --- DICOM / imaging ---
+pydicom==3.0.1
+pylibjpeg==2.0.1
+pylibjpeg-libjpeg==2.5.0
+pylibjpeg-openjpeg==2.6.0
+numpy==2.5.4
+Pillow==11.0.0

@@ -1,0 +1,37 @@
+<div class="page">
+  <header class="page-head">
+    <h1 i18n="@@patients.title">Patients</h1>
+    <div class="spacer"></div>
+    <a routerLink="/" class="btn-link" i18n="@@common.backToDashboard">← Dashboard</a>
+    @if (canWrite()) {
+      <a routerLink="/patients/new" class="btn" i18n="@@patients.new">New patient</a>
+    }
+  </header>
+
+  @if (loading()) {
+    <p i18n="@@common.loading">Loading…</p>
+  } @else if (items().length === 0) {
+    <p class="empty" i18n="@@patients.empty">No patients yet.</p>
+  } @else {
+    <table class="data">
+      <thead>
+        <tr>
+          <th i18n="@@patients.col.mrn">MRN</th>
+          <th i18n="@@patients.col.name">Name</th>
+          <th i18n="@@patients.col.sex">Sex</th>
+          <th i18n="@@patients.col.birth">Birth date</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (p of items(); track p.id) {
+          <tr [routerLink]="['/patients', p.id]" class="row-link">
+            <td>{{ p.mrn }}</td>
+            <td>{{ p.family_name }}, {{ p.given_name }}</td>
+            <td>{{ p.sex }}</td>
+            <td>{{ p.birth_date ?? '—' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</div>
