@@ -300,6 +300,143 @@ without a rework.
 
 ---
 
+## ADR-013 — Testing strategy
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context.** The MVP needs confidence that each feature works and keeps working, without a
+heavy test-infrastructure burden and without a local toolchain (all work runs through
+Docker). A decision is needed on how tests exercise the async stack and the database.
+
+**Decision.**
+- **Pyramid, API-centric.** Unit tests cover pure logic (security primitives, the DICOM
+  pipeline). The bulk are integration tests that drive the real FastAPI app through
+  `httpx.ASGITransport` — no network, full routing/validation/auth — one module per surface
+  (auth, patients/encounters, studies, reports, audit). One **end-to-end smoke test**
+  (`test_e2e.py`) chains the whole flow: upload → background processing → review → report →
+  PDF → audit.
+- **In-memory SQLite for tests**, Postgres in production. Models use SQLAlchemy's portable
+  `Uuid`/`JSON`-with-`JSONB`-variant types so the same schema runs on both. The test engine
+  is a single shared in-memory connection (`StaticPool`), created via
+  `Base.metadata.create_all` — so tests do not run Alembic and need no database container.
+- **Background tasks run in tests.** `app.state.session_factory` is overridden to the test
+  session factory, so `BackgroundTasks` (metadata + preview extraction) execute against the
+  same in-memory DB and can be asserted on.
+- **Docker-only runs.** Tests run inside the backend image (`requirements-dev.txt` layered
+  on at run time), matching the no-local-toolchain constraint.
+
+**Why.** ASGI-transport integration tests give high coverage per test at low cost and catch
+wiring/auth regressions that unit tests miss; SQLite-in-memory keeps the suite fast and
+container-free while the portable types preserve Postgres fidelity for the parts that matter.
+
+**Trade-off / deferred.** SQLite does not exercise Postgres-specific behavior (JSONB operators,
+true enum/constraint semantics, concurrency) or the Alembic migrations themselves — those are
+validated by the live `docker compose up` boot (migrations run on real Postgres) rather than in
+the unit suite. No load/performance tests; no frontend unit tests (the Angular build is the
+current gate).
+
+---
+
+## ADR-014 — Security hardening pass
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context.** A senior review flagged several latent security issues in the MVP:
+a committed default JWT key that silently applies if unset, API docs published by
+default, credentialed CORS that isn't needed, a path-traversal guard using a weak
+string prefix, and unbounded client JSONB.
+
+**Decision.**
+- **Fail-fast config** (`validate_security`, run at startup): outside development,
+  refuse to boot if `JWT_KEY` is the known default or shorter than 32 chars. This
+  turns a silent catastrophe (forgeable admin tokens) into a loud startup error.
+- **API docs off by default** (`swagger_enabled=False`); dev enables them explicitly.
+- **CORS `allow_credentials=False`** — auth is Bearer-token, not cookies.
+- **Path-traversal guard uses `Path.is_relative_to`** (exact ancestor check) instead
+  of a string prefix that treated a sibling like `<root>-evil` as inside the root.
+- **`extra` JSONB capped** at 16 KiB per record (shared `bounded_extra` validator).
+
+**Trade-off / deferred.** No token revocation/blocklist (logout stays client-side;
+tokens live until expiry), no secrets manager, no WAF/security headers/TLS — those
+remain production-hosting concerns.
+
+---
+
+## ADR-015 — Organization-scoped object-level access control
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context.** Reads were gated only by authentication, so any authenticated user could
+fetch any patient, study, report, image, or PDF by id (an IDOR / broken-access-control
+flaw). For a platform serving multiple referring sites with PHI, access must be scoped
+to who may see a record, not merely whether the caller is logged in.
+
+**Decision.**
+- Introduce an **`Organization`** (referring site). **`ReferringClinician`s belong to one
+  organization and see only that site's** patients, encounters, studies, and reports;
+  **`Radiologist`s and `Admin`s are cross-site** (the remote readers serve every site).
+- Routers derive an **`AccessScope`** from the current user and pass it to services, which
+  (a) filter list queries by the patient's `organization_id` and (b) authorize single-record
+  reads. A denied single-record read returns **404, not 403**, so record existence cannot be
+  probed across sites.
+- `organization_id` is denormalized onto `Patient` (studies/reports scope through their
+  patient); users carry `organization_id` (null = cross-site).
+
+**Why.** Per-tenant data isolation is a baseline expectation for medical systems and a
+prerequisite for the deferred HIPAA/local-regulation work; the cross-site radiologist model
+matches how teleradiology actually operates. Scoping in the service layer (not scattered in
+routers) keeps the policy in one place with the queries it constrains.
+
+**Trade-off / deferred.** Coarse-grained (org-level, not per-encounter assignment or
+per-radiologist worklists); no cross-org sharing/referral workflow; admins are fully
+cross-site. The `AccessScope` abstraction leaves room to refine to assignment-based access
+later without touching routers.
+
+---
+
+## ADR-016 — Audit write strategy (synchronous vs. background)
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context.** Audit logging commits a row inside request handlers. Doing it synchronously on
+every read (study view, file/PDF download) turns read-heavy endpoints into writes on the hot
+path; doing it asynchronously everywhere risks losing security-relevant events on a crash.
+
+**Decision.** Split by event criticality. **Security-relevant writes** (login, record
+create/update, report finalize) are recorded **synchronously** so they are never lost.
+**Read-path events** (view, download) are recorded **off the response path** via
+`BackgroundTasks` on a fresh session, keeping request latency low; a lost view event on a hard
+crash is acceptable. A shared request-scoped `Auditor` dependency exposes `log` (sync) and
+`log_async` (background). Recording is best-effort — a failure rolls back and never breaks the
+audited action.
+
+**Trade-off / deferred.** Background events run in-process (not a durable queue); under a hard
+crash a handful of in-flight view/download events can be lost. Acceptable for the MVP given the
+criticality split; a durable log sink is future work.
+
+---
+
+## ADR-017 — Processing durability & maintenance
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context.** DICOM processing runs in-process via `BackgroundTasks` (ADR-008). If the server is
+killed mid-task a study is left `PROCESSING` forever, and abandoned chunked uploads leak temp
+files and `upload_sessions` rows. A full external task queue is out of scope for the MVP.
+
+**Decision.** Add **startup maintenance** instead of an external queue:
+- **`recover_stale_processing`** marks any `PROCESSING` study `FAILED` with a clear re-upload
+  message (after a restart no decode task survives, so such rows are orphaned).
+- **`purge_stale_uploads`** deletes `open` upload sessions and their temp objects older than a
+  TTL (default 24 h).
+Both run in the lifespan startup hook.
+
+**Why.** This gives self-healing and disk reclamation at near-zero complexity for a single-node
+MVP, and names the boundary at which a real queue (arq/Celery) becomes worthwhile.
+
+**Trade-off / deferred.** Startup-only (no periodic scheduler yet) and single-node (a second
+replica restarting could fail another's genuinely in-flight study); an external queue with
+retries/visibility remains the scaling path. Per-chunk upload commits are kept deliberately —
+they are required for correct resume (a lagging offset would re-append bytes and corrupt the
+file).
+
+---
+
 <!-- Upcoming ADRs (added as iterations land):
      (none pending)
 -->

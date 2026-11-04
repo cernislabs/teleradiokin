@@ -12,8 +12,8 @@
 - **Target context:** Central Africa — low bandwidth, intermittent connectivity, modest hardware
 - **Language:** All code/docs in English; frontend strings kept i18n-extractable (French later)
 - **Last updated:** 2026-11-04
-- **Current status:** `IN PROGRESS` — Iteration 6 (Audit Trail) DONE & verified; next is Iteration 7 (Hardening, Tests & Docs)
-- **Active iteration:** Iteration 7 — Hardening, Tests & Docs (next)
+- **Current status:** `MVP COMPLETE` — all 7 iterations DONE & verified; full suite green and a clean `docker compose up` boots end-to-end
+- **Active iteration:** none — MVP feature set complete; see Backlog (§6) and the deferred list for post-MVP work
 - **Cadence:** build phases back-to-back; **pause at milestones** (after Auth, after Upload, after Reports) for the user to run `docker-compose up` and test
 - **Env note:** no local Python / .NET / Angular toolchain — all build/test/run goes through Docker (python:3.12-slim, node, compose)
 
@@ -130,12 +130,12 @@ Cross-cutting: **clean layered architecture + DI**, **security**, **tests**, **d
 - [x] Admin-only query endpoint (`GET /api/audit`, filters: actor/action/entity/time) + Angular admin audit-log view
 - [x] Tests covering audit capture + admin-only access (38 pass); live-verified trail via proxy, non-admin 403
 
-### Iteration 7 — Hardening, Tests & Docs — `TODO`
-- [ ] End-to-end smoke test: upload → review → report
-- [ ] Fill test coverage gaps (domain, services, API, pipeline)
-- [ ] Finalize README (run instructions, architecture brief, deferred list)
-- [ ] Finalize `docs/decisions.md`
-- [ ] Verify clean `docker-compose up` + full suite green on fresh checkout
+### Iteration 7 — Hardening, Tests & Docs — `DONE`
+- [x] End-to-end smoke test (`test_e2e.py`): upload → process → worklist → file → report draft→final → PDF → audit, across all three roles
+- [x] Filled coverage gaps: non-DICOM (PNG) upload through the API, unsupported-type `415` path
+- [x] Finalized README: Docker-based test run instructions + accurate test-suite description
+- [x] Finalized `docs/decisions.md`: ADR-013 (testing strategy)
+- [x] Verified clean `docker compose up` on a fresh volume — all 3 services healthy, migrations at head `0005_audit` on real Postgres, authenticated calls 200 via proxy; **41 pytest pass**
 
 ---
 
@@ -192,6 +192,8 @@ Executed immediately (see ADR-004):
 | 2026-11-04 | 4 — Worklist/Viewer | Pending worklist, cornerstone viewer (lazy, W/L+pan+zoom), `GET /studies/{id}/file` endpoint, dashboard link. Live: worklist + DICOM file served via proxy | ✅ 28 pytest + frontend build (initial 378 kB, viewer lazy) + live checks green | It.5 Reports |
 | 2026-11-04 | 5 — Reports | `Report` model + migration `0004`, draft→final lifecycle (locks + study→Reported), server-rendered PDF, Angular report panel. Live: finalize + clinician PDF via proxy; edit-after-final 403 | ✅ 33 pytest + frontend build + live report/PDF green | **milestone pause** → It.6 Audit |
 | 2026-11-04 | 6 — Audit | `AuditEvent` model + migration `0005`, best-effort audit service, instrumented login/patient/study/report flows, admin-only `GET /api/audit` + Angular admin audit-log view. Live: trail (login/view/create w/ actor+IP) via proxy; non-admin 403 | ✅ 38 pytest + frontend build + live audit green | It.7 Hardening |
+| 2026-11-04 | 7 — Hardening | E2E smoke test (upload→review→report→PDF→audit, all roles), PNG-upload + 415 gap tests, README Docker test instructions, ADR-013 (testing strategy), fresh-volume boot verified | ✅ 41 pytest + frontend build + clean `docker compose up` (migrations head `0005` on Postgres) green | **MVP complete** |
+| 2026-11-04 | review | Senior-review remediation: org-scoped object-level access control (S1), config fail-fast + swagger-off + CORS + traversal guard + `extra` cap (S2–S7), DRY (ServiceError handler, `str_enum`, Auditor, shared test helpers), move-on-complete, stale-processing reaper + upload GC, audit composite index + background read-path audit, blob-URL revocation; migration `0006`, ADR-014..017 | ✅ 55 pytest + frontend build + clean `docker compose up` (head `0006`) + live cross-org isolation green | post-MVP backlog |
 
 ---
 

@@ -13,28 +13,46 @@ from app.core.config import get_settings
 from app.core.security import hash_password
 from app.domain.enums import AdministrativeGender, EncounterStatus, UserRole
 from app.infrastructure.database import AsyncSessionLocal
+from app.infrastructure.models.organization import Organization
 from app.infrastructure.models.patient import Encounter, Patient
 from app.infrastructure.models.user import User
 
 logger = logging.getLogger("seed")
 
 SAMPLE_MRN = "MRN-0001"
+SAMPLE_ORG_NAME = "Kinshasa General Clinic"
+
+
+async def _get_or_create_org(session) -> Organization:
+    org = (
+        await session.execute(
+            select(Organization).where(Organization.name == SAMPLE_ORG_NAME)
+        )
+    ).scalar_one_or_none()
+    if org is None:
+        org = Organization(name=SAMPLE_ORG_NAME)
+        session.add(org)
+        await session.flush()
+        logger.info("Seeded organization: %s", SAMPLE_ORG_NAME)
+    return org
 
 
 async def seed_initial_data() -> None:
     settings = get_settings()
-    seeds = [
-        ("admin@teleradiokin.org", "System Administrator",
-         UserRole.ADMIN, settings.seed_admin_password),
-        ("radiologist@teleradiokin.org", "Dr. Remote Radiologist",
-         UserRole.RADIOLOGIST, settings.seed_radiologist_password),
-        ("clinician@teleradiokin.org", "Dr. Referring Clinician",
-         UserRole.REFERRING_CLINICIAN, settings.seed_clinician_password),
-    ]
 
     async with AsyncSessionLocal() as session:
-        created = 0
-        for email, full_name, role, password in seeds:
+        org = await _get_or_create_org(session)
+        # Clinicians are scoped to the sample org; radiologists/admins are
+        # cross-site (no organization).
+        seeds = [
+            ("admin@teleradiokin.org", "System Administrator",
+             UserRole.ADMIN, settings.seed_admin_password, None),
+            ("radiologist@teleradiokin.org", "Dr. Remote Radiologist",
+             UserRole.RADIOLOGIST, settings.seed_radiologist_password, None),
+            ("clinician@teleradiokin.org", "Dr. Referring Clinician",
+             UserRole.REFERRING_CLINICIAN, settings.seed_clinician_password, org.id),
+        ]
+        for email, full_name, role, password, org_id in seeds:
             if not password:
                 logger.warning("No seed password for %s; skipping.", role)
                 continue
@@ -48,17 +66,16 @@ async def seed_initial_data() -> None:
                     hashed_password=hash_password(password),
                     role=role,
                     is_active=True,
+                    organization_id=org_id,
                 )
             )
-            created += 1
             logger.info("Seeded %s account: %s", role.value, email)
-        if created:
-            await session.commit()
+        await session.commit()
 
-        await _seed_sample_patient(session)
+        await _seed_sample_patient(session, org)
 
 
-async def _seed_sample_patient(session) -> None:
+async def _seed_sample_patient(session, org: Organization) -> None:
     exists = await session.execute(select(Patient).where(Patient.mrn == SAMPLE_MRN))
     patient = exists.scalar_one_or_none()
     if patient is not None:
@@ -66,6 +83,7 @@ async def _seed_sample_patient(session) -> None:
 
     patient = Patient(
         mrn=SAMPLE_MRN,
+        organization_id=org.id,
         family_name="Doe",
         given_name="Jane",
         birth_date=date(1990, 5, 17),

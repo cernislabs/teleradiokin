@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import AccessScope
 from app.domain.patient import PatientCreate, PatientUpdate
 from app.infrastructure.models.patient import Patient
 
@@ -19,17 +20,26 @@ async def get_patient_by_mrn(session: AsyncSession, mrn: str) -> Patient | None:
 
 
 async def list_patients(
-    session: AsyncSession, limit: int = 100, offset: int = 0
+    session: AsyncSession,
+    *,
+    scope: AccessScope,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[Patient]:
-    result = await session.execute(
-        select(Patient).order_by(Patient.created_at.desc()).limit(limit).offset(offset)
-    )
+    stmt = select(Patient).order_by(Patient.created_at.desc())
+    if not scope.cross_site:
+        stmt = stmt.where(Patient.organization_id == scope.organization_id)
+    stmt = stmt.limit(limit).offset(offset)
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
-async def create_patient(session: AsyncSession, data: PatientCreate) -> Patient:
+async def create_patient(
+    session: AsyncSession, data: PatientCreate, *, organization_id: uuid.UUID | None
+) -> Patient:
     patient = Patient(
         mrn=data.mrn,
+        organization_id=organization_id,
         family_name=data.family_name,
         given_name=data.given_name,
         birth_date=data.birth_date,

@@ -2,11 +2,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Text, Uuid
+from sqlalchemy import DateTime, ForeignKey, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.enums import ReportStatus
 from app.infrastructure.models.base import TimestampedBase
+from app.infrastructure.models.types import str_enum
 
 
 class Report(TimestampedBase):
@@ -30,11 +31,7 @@ class Report(TimestampedBase):
     )
 
     status: Mapped[ReportStatus] = mapped_column(
-        Enum(
-            ReportStatus, native_enum=False, length=16,
-            values_callable=lambda e: [m.value for m in e],
-        ),
-        default=ReportStatus.DRAFT, nullable=False,
+        str_enum(ReportStatus, 16), default=ReportStatus.DRAFT, nullable=False,
     )
     findings: Mapped[str] = mapped_column(Text, nullable=False, default="")
     impression: Mapped[str] = mapped_column(Text, nullable=False, default="")

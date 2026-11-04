@@ -9,7 +9,6 @@ are independently unit-testable.
 """
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,6 +61,17 @@ def extract_metadata(path: str | Path) -> DicomMetadata:
     )
 
 
+def _save_jpeg(image: Image.Image, output_path: str | Path, max_size: int, quality: int) -> str:
+    """Downsize to ``max_size`` on the longest edge and write a progressive JPEG."""
+    if image.mode not in ("L", "RGB"):
+        image = image.convert("RGB")
+    image.thumbnail((max_size, max_size))
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    image.save(out, format="JPEG", quality=quality, optimize=True, progressive=True)
+    return str(out)
+
+
 def generate_preview(
     path: str | Path,
     output_path: str | Path,
@@ -98,15 +108,7 @@ def generate_preview(
         arr = np.zeros_like(arr)
     arr = arr.astype(np.uint8)
 
-    image = Image.fromarray(arr)
-    if image.mode not in ("L", "RGB"):
-        image = image.convert("RGB")
-    image.thumbnail((max_size, max_size))
-
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    image.save(out, format="JPEG", quality=quality, optimize=True, progressive=True)
-    return str(out)
+    return _save_jpeg(Image.fromarray(arr), output_path, max_size, quality)
 
 
 def generate_image_preview(
@@ -116,14 +118,7 @@ def generate_image_preview(
     quality: int = 72,
 ) -> str:
     """Compressed JPEG preview for a non-DICOM raster image (PNG/JPEG)."""
-    image = Image.open(str(path))
-    if image.mode not in ("L", "RGB"):
-        image = image.convert("RGB")
-    image.thumbnail((max_size, max_size))
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    image.save(out, format="JPEG", quality=quality, optimize=True, progressive=True)
-    return str(out)
+    return _save_jpeg(Image.open(str(path)), output_path, max_size, quality)
 
 
 def is_valid_image(path: str | Path) -> bool:
@@ -139,14 +134,10 @@ def is_valid_image(path: str | Path) -> bool:
 def process_dicom_file(
     source_path: str | Path, preview_path: str | Path
 ) -> DicomMetadata:
-    """Synchronous pipeline: extract metadata + generate preview. Thread-friendly."""
+    """Synchronous pipeline: extract metadata + generate preview. Thread-friendly.
+
+    Callers run this off the event loop (``asyncio.to_thread`` / ``BackgroundTasks``).
+    """
     metadata = extract_metadata(source_path)
     generate_preview(source_path, preview_path)
     return metadata
-
-
-async def process_dicom_file_async(
-    source_path: str | Path, preview_path: str | Path
-) -> DicomMetadata:
-    """Run the CPU-heavy pipeline in a worker thread to avoid blocking the loop."""
-    return await asyncio.to_thread(process_dicom_file, source_path, preview_path)

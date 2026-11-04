@@ -5,7 +5,7 @@ from datetime import date, datetime
 from pydantic import Field, field_validator
 
 from app.domain.enums import AdministrativeGender
-from app.domain.schemas import AppModel
+from app.domain.schemas import AppModel, bounded_extra
 
 
 class PatientCreate(AppModel):
@@ -29,6 +29,8 @@ class PatientCreate(AppModel):
             )
         return value
 
+    _check_extra = field_validator("extra")(bounded_extra)
+
 
 class PatientUpdate(AppModel):
     family_name: str | None = Field(default=None, min_length=1, max_length=120)
@@ -38,10 +40,13 @@ class PatientUpdate(AppModel):
     phone: str | None = Field(default=None, max_length=40)
     extra: dict | None = None
 
+    _check_extra = field_validator("extra")(bounded_extra)
+
 
 class PatientRead(AppModel):
     id: uuid.UUID
     mrn: str
+    organization_id: uuid.UUID | None
     family_name: str
     given_name: str
     birth_date: date | None

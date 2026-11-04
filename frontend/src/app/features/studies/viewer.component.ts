@@ -16,6 +16,7 @@ import { AuthService } from '../../core/auth.service';
 import { CornerstoneService } from '../../core/cornerstone.service';
 import { ReportService } from '../../core/report.service';
 import { StudyService } from '../../core/study.service';
+import { ObjectUrls } from '../../core/object-url';
 import { Report, Study } from '../../core/models';
 
 type Tool = 'wwwc' | 'pan' | 'zoom';
@@ -34,6 +35,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
   private readonly auth = inject(AuthService);
   private readonly cornerstone = inject(CornerstoneService);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly objectUrls = new ObjectUrls();
 
   @ViewChild('viewport') viewportRef!: ElementRef<HTMLElement>;
 
@@ -135,6 +137,8 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     this.reportService.getPdfBlob(r.id).subscribe((blob) => {
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
+      // Give the new tab time to load the blob before releasing it.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     });
   }
 
@@ -147,7 +151,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
         .display(el, blob)
         .catch(() => this.error.set($localize`:@@viewer.decodeError:Could not decode this DICOM image.`));
     } else {
-      this.imageUrl.set(this.sanitizer.bypassSecurityTrustUrl(URL.createObjectURL(blob)));
+      this.imageUrl.set(this.sanitizer.bypassSecurityTrustUrl(this.objectUrls.create(blob)));
     }
   }
 
@@ -214,5 +218,6 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     if (this.enabled && this.viewportRef) {
       this.cornerstone.disable(this.viewportRef.nativeElement);
     }
+    this.objectUrls.revokeAll();
   }
 }

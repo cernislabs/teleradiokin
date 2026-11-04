@@ -112,3 +112,15 @@ def sample_dicom_bytes():
     buffer = io.BytesIO()
     _build_dicom_dataset().save_as(buffer, enforce_file_format=True)
     return buffer.getvalue()
+
+
+@pytest.fixture
+def sample_png_bytes():
+    """Return bytes of a small valid PNG (for non-DICOM image upload tests)."""
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (48, 48), (30, 90, 160)).save(buffer, format="PNG")
+    return buffer.getvalue()

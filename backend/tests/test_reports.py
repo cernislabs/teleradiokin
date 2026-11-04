@@ -1,48 +1,12 @@
-import uuid
-
-from app.domain.auth import UserCreate
-from app.domain.enums import AdministrativeGender, StudyStatus, UserRole
-from app.domain.patient import PatientCreate
-from app.infrastructure.models.study import Study
-from app.services.auth import create_user
-from app.services.patients import create_patient
-
-
-async def _login(client, email, password="password123"):
-    r = await client.post("/api/auth/login", json={"email": email, "password": password})
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-
-async def _user(db_session, email, role):
-    await create_user(
-        db_session, UserCreate(email=email, full_name="U", password="password123", role=role)
-    )
+from app.domain.enums import UserRole
+from tests.helpers import login as _login
+from tests.helpers import make_patient, make_study
+from tests.helpers import make_user as _user
 
 
 async def _make_study(db_session, mrn="MRN-R1"):
-    patient = await create_patient(
-        db_session,
-        PatientCreate(
-            mrn=mrn, family_name="Rep", given_name="Ort",
-            sex=AdministrativeGender.MALE, consent_acknowledged=True,
-        ),
-    )
-    study = Study(
-        encounter_id=uuid.uuid4(),
-        patient_id=patient.id,
-        status=StudyStatus.PENDING,
-        storage_key="studies/x/original.dcm",
-        original_filename="s.dcm",
-        size_bytes=10,
-        is_dicom=True,
-        modality="CR",
-        body_part="CHEST",
-        accession_number="ACC-R",
-    )
-    db_session.add(study)
-    await db_session.commit()
-    await db_session.refresh(study)
-    return study
+    patient = await make_patient(db_session, mrn=mrn)
+    return await make_study(db_session, patient_id=patient.id)
 
 
 async def test_radiologist_creates_and_finalizes_report(client, db_session):

@@ -23,6 +23,7 @@ class UserRead(AppModel):
     full_name: str
     role: UserRole
     is_active: bool
+    organization_id: uuid.UUID | None = None
 
 
 class UserCreate(AppModel):
@@ -30,3 +31,4 @@ class UserCreate(AppModel):
     full_name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=8, max_length=128)
     role: UserRole
+    organization_id: uuid.UUID | None = None

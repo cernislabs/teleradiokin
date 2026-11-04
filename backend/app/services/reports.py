@@ -5,21 +5,32 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import AccessScope
+from app.core.errors import ServiceError
 from app.domain.enums import ReportStatus, StudyStatus
 from app.domain.report import ReportCreate, ReportUpdate
+from app.infrastructure.models.patient import Patient
 from app.infrastructure.models.report import Report
 from app.infrastructure.models.study import Study
 
 
-class ReportError(Exception):
-    def __init__(self, status_code: int, detail: str) -> None:
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
-
-
 async def get_report(session: AsyncSession, report_id: uuid.UUID) -> Report | None:
     return await session.get(Report, report_id)
+
+
+async def get_report_visible(
+    session: AsyncSession, report_id: uuid.UUID, scope: AccessScope
+) -> Report | None:
+    """Fetch a report only if the caller's scope may see it (else None → 404)."""
+    report = await session.get(Report, report_id)
+    if report is None:
+        return None
+    if scope.cross_site:
+        return report
+    patient = await session.get(Patient, report.patient_id)
+    if patient is None or not scope.allows_org(patient.organization_id):
+        return None
+    return report
 
 
 async def get_report_for_study(session: AsyncSession, study_id: uuid.UUID) -> Report | None:
@@ -30,14 +41,22 @@ async def get_report_for_study(session: AsyncSession, study_id: uuid.UUID) -> Re
 async def list_reports(
     session: AsyncSession,
     *,
+    scope: AccessScope,
     patient_id: uuid.UUID | None = None,
     study_id: uuid.UUID | None = None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[Report]:
     stmt = select(Report).order_by(Report.created_at.desc())
+    if not scope.cross_site:
+        stmt = stmt.join(Patient, Report.patient_id == Patient.id).where(
+            Patient.organization_id == scope.organization_id
+        )
     if patient_id is not None:
         stmt = stmt.where(Report.patient_id == patient_id)
     if study_id is not None:
         stmt = stmt.where(Report.study_id == study_id)
+    stmt = stmt.limit(limit).offset(offset)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
@@ -52,9 +71,9 @@ async def create_report(
 ) -> Report:
     study = await session.get(Study, data.study_id)
     if study is None:
-        raise ReportError(404, "Study not found")
+        raise ServiceError(404, "Study not found")
     if await get_report_for_study(session, data.study_id) is not None:
-        raise ReportError(409, "A report already exists for this study")
+        raise ServiceError(409, "A report already exists for this study")
 
     report = Report(
         study_id=study.id,
@@ -78,7 +97,7 @@ async def update_report(
     session: AsyncSession, report: Report, data: ReportUpdate
 ) -> Report:
     if report.status == ReportStatus.FINAL:
-        raise ReportError(409, "A finalized report cannot be edited")
+        raise ServiceError(409, "A finalized report cannot be edited")
 
     if data.findings is not None:
         report.findings = data.findings

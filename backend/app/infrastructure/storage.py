@@ -7,6 +7,7 @@ callers (services depend on the protocol, not the implementation).
 """
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 from typing import BinaryIO, Protocol
@@ -18,6 +19,8 @@ class StudyStorage(Protocol):
     def save(self, relative_path: str, data: BinaryIO) -> str: ...
 
     def append_bytes(self, relative_path: str, data: bytes) -> int: ...
+
+    def move(self, src_relative_path: str, dst_relative_path: str) -> str: ...
 
     def open(self, relative_path: str) -> BinaryIO: ...
 
@@ -38,9 +41,12 @@ class LocalFilesystemStorage:
         self._root.mkdir(parents=True, exist_ok=True)
 
     def _resolve(self, relative_path: str) -> Path:
-        # Prevent path traversal outside the storage root.
+        # Prevent path traversal outside the storage root. `is_relative_to` is an
+        # exact ancestor check (unlike a string prefix, which would treat a
+        # sibling like `<root>-evil` as inside the root).
+        root = self._root.resolve()
         target = (self._root / relative_path).resolve()
-        if not str(target).startswith(str(self._root.resolve())):
+        if target != root and not target.is_relative_to(root):
             raise ValueError("Resolved path escapes the storage root.")
         return target
 
@@ -57,6 +63,21 @@ class LocalFilesystemStorage:
         with target.open("ab") as fh:
             fh.write(data)
         return target.stat().st_size
+
+    def move(self, src_relative_path: str, dst_relative_path: str) -> str:
+        """Move an object to a new key. Uses a same-filesystem rename when
+        possible (no second IO pass over large study files), else copies."""
+        src = self._resolve(src_relative_path)
+        dst = self._resolve(dst_relative_path)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.replace(src, dst)
+        except OSError:
+            # Cross-device or other failure: fall back to a streamed copy.
+            with src.open("rb") as rf, dst.open("wb") as wf:
+                shutil.copyfileobj(rf, wf)
+            src.unlink(missing_ok=True)
+        return dst_relative_path
 
     def open(self, relative_path: str) -> BinaryIO:
         return self._resolve(relative_path).open("rb")

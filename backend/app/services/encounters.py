@@ -4,8 +4,9 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import AccessScope
 from app.domain.encounter import EncounterCreate, EncounterUpdate
-from app.infrastructure.models.patient import Encounter
+from app.infrastructure.models.patient import Encounter, Patient
 
 
 async def get_encounter(session: AsyncSession, encounter_id: uuid.UUID) -> Encounter | None:
@@ -13,11 +14,21 @@ async def get_encounter(session: AsyncSession, encounter_id: uuid.UUID) -> Encou
 
 
 async def list_encounters(
-    session: AsyncSession, patient_id: uuid.UUID | None = None
+    session: AsyncSession,
+    *,
+    scope: AccessScope,
+    patient_id: uuid.UUID | None = None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[Encounter]:
     stmt = select(Encounter).order_by(Encounter.created_at.desc())
+    if not scope.cross_site:
+        stmt = stmt.join(Patient, Encounter.patient_id == Patient.id).where(
+            Patient.organization_id == scope.organization_id
+        )
     if patient_id is not None:
         stmt = stmt.where(Encounter.patient_id == patient_id)
+    stmt = stmt.limit(limit).offset(offset)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

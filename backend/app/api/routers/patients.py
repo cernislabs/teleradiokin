@@ -1,19 +1,26 @@
 """Patient record endpoints.
 
-Reads are available to any authenticated user (radiologists need patient context);
-writes are limited to Admin and ReferringClinician.
+Reads are available to any authenticated user but scoped by organization
+(clinicians see only their site; radiologists/admins are cross-site). Writes are
+limited to Admin and ReferringClinician.
 """
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, require_roles
-from app.domain.enums import AuditAction, AuditEntity, UserRole
+from app.core.authz import AccessScope
+from app.core.dependencies import (
+    Auditor,
+    get_access_scope,
+    get_auditor,
+    get_current_user,
+    require_clinical_write,
+)
+from app.domain.enums import AuditAction, AuditEntity
 from app.domain.patient import PatientCreate, PatientRead, PatientUpdate
 from app.infrastructure.database import get_session
 from app.infrastructure.models.user import User
-from app.services import audit
 from app.services.patients import (
     create_patient,
     get_patient,
@@ -24,22 +31,23 @@ from app.services.patients import (
 
 router = APIRouter(prefix="/api/patients", tags=["patients"])
 
-_write_roles = require_roles(UserRole.ADMIN, UserRole.REFERRING_CLINICIAN)
-
 
 @router.get("", response_model=list[PatientRead])
 async def list_all(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    scope: AccessScope = Depends(get_access_scope),
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list:
-    return await list_patients(session)
+    return await list_patients(session, scope=scope, limit=limit, offset=offset)
 
 
 @router.post("", response_model=PatientRead, status_code=status.HTTP_201_CREATED)
 async def create(
     payload: PatientCreate,
-    request: Request,
-    current_user: User = Depends(_write_roles),
+    current_user: User = Depends(require_clinical_write),
+    auditor: Auditor = Depends(get_auditor),
     session: AsyncSession = Depends(get_session),
 ):
     if await get_patient_by_mrn(session, payload.mrn) is not None:
@@ -47,11 +55,11 @@ async def create(
             status_code=status.HTTP_409_CONFLICT,
             detail="A patient with this MRN already exists",
         )
-    patient = await create_patient(session, payload)
-    await audit.record(
-        session, actor=current_user, action=AuditAction.CREATE,
-        entity_type=AuditEntity.PATIENT, entity_id=patient.id, request=request,
-        detail={"mrn": patient.mrn},
+    patient = await create_patient(
+        session, payload, organization_id=current_user.organization_id
+    )
+    await auditor.log(
+        AuditAction.CREATE, AuditEntity.PATIENT, patient.id, {"mrn": patient.mrn}
     )
     return patient
 
@@ -59,17 +67,14 @@ async def create(
 @router.get("/{patient_id}", response_model=PatientRead)
 async def get_one(
     patient_id: uuid.UUID,
-    request: Request,
-    current_user: User = Depends(get_current_user),
+    scope: AccessScope = Depends(get_access_scope),
+    auditor: Auditor = Depends(get_auditor),
     session: AsyncSession = Depends(get_session),
 ):
     patient = await get_patient(session, patient_id)
-    if patient is None:
+    if patient is None or not scope.allows_org(patient.organization_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found")
-    await audit.record(
-        session, actor=current_user, action=AuditAction.VIEW,
-        entity_type=AuditEntity.PATIENT, entity_id=patient.id, request=request,
-    )
+    auditor.log_async(AuditAction.VIEW, AuditEntity.PATIENT, patient.id)
     return patient
 
 
@@ -77,16 +82,14 @@ async def get_one(
 async def update(
     patient_id: uuid.UUID,
     payload: PatientUpdate,
-    request: Request,
-    current_user: User = Depends(_write_roles),
+    scope: AccessScope = Depends(get_access_scope),
+    _: User = Depends(require_clinical_write),
+    auditor: Auditor = Depends(get_auditor),
     session: AsyncSession = Depends(get_session),
 ):
     patient = await get_patient(session, patient_id)
-    if patient is None:
+    if patient is None or not scope.allows_org(patient.organization_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found")
     updated = await update_patient(session, patient, payload)
-    await audit.record(
-        session, actor=current_user, action=AuditAction.UPDATE,
-        entity_type=AuditEntity.PATIENT, entity_id=updated.id, request=request,
-    )
+    await auditor.log(AuditAction.UPDATE, AuditEntity.PATIENT, updated.id)
     return updated

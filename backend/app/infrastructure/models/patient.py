@@ -2,12 +2,12 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, String, Uuid
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.enums import AdministrativeGender, EncounterStatus
 from app.infrastructure.models.base import TimestampedBase
-from app.infrastructure.models.types import JsonB
+from app.infrastructure.models.types import JsonB, str_enum
 
 
 class Patient(TimestampedBase):
@@ -16,18 +16,19 @@ class Patient(TimestampedBase):
     # Business identifier (Medical Record Number).
     mrn: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
 
+    # Owning referring site; used to scope clinician access (null = unassigned).
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"),
+        index=True, nullable=True,
+    )
+
     # FHIR HumanName-style fields.
     family_name: Mapped[str] = mapped_column(String(120), nullable=False)
     given_name: Mapped[str] = mapped_column(String(120), nullable=False)
 
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     sex: Mapped[AdministrativeGender] = mapped_column(
-        Enum(
-            AdministrativeGender,
-            native_enum=False,
-            length=16,
-            values_callable=lambda e: [m.value for m in e],
-        ),
+        str_enum(AdministrativeGender, 16),
         default=AdministrativeGender.UNKNOWN,
         nullable=False,
     )
@@ -58,12 +59,7 @@ class Encounter(TimestampedBase):
     )
 
     status: Mapped[EncounterStatus] = mapped_column(
-        Enum(
-            EncounterStatus,
-            native_enum=False,
-            length=16,
-            values_callable=lambda e: [m.value for m in e],
-        ),
+        str_enum(EncounterStatus, 16),
         default=EncounterStatus.PLANNED,
         nullable=False,
     )

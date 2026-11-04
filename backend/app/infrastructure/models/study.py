@@ -1,12 +1,12 @@
 """Imaging study and chunked-upload session models."""
 import uuid
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, String, Uuid
+from sqlalchemy import BigInteger, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.enums import StudyStatus
 from app.infrastructure.models.base import TimestampedBase
-from app.infrastructure.models.types import JsonB
+from app.infrastructure.models.types import JsonB, str_enum
 
 
 class UploadSession(TimestampedBase):
@@ -43,10 +43,7 @@ class Study(TimestampedBase):
     )
 
     status: Mapped[StudyStatus] = mapped_column(
-        Enum(
-            StudyStatus, native_enum=False, length=16,
-            values_callable=lambda e: [m.value for m in e],
-        ),
+        str_enum(StudyStatus, 16),
         default=StudyStatus.PROCESSING, index=True, nullable=False,
     )
 

@@ -11,6 +11,7 @@ export interface User {
   full_name: string;
   role: UserRole;
   is_active: boolean;
+  organization_id: string | null;
 }
 
 export type AdministrativeGender = 'male' | 'female' | 'other' | 'unknown';
@@ -18,6 +19,7 @@ export type AdministrativeGender = 'male' | 'female' | 'other' | 'unknown';
 export interface Patient {
   id: string;
   mrn: string;
+  organization_id: string | null;
   family_name: string;
   given_name: string;
   birth_date: string | null;

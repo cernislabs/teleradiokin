@@ -1,15 +1,18 @@
 """Audit-trail business logic: record events and query them (admin).
 
 Recording is deliberately best-effort — an audit failure must never break the
-primary operation it accompanies, so :func:`record` swallows and rolls back its
-own errors rather than propagating them.
+primary operation it accompanies, so the writer swallows and rolls back its own
+errors rather than propagating them. Events can be written synchronously on the
+request session, or off the response path on a fresh session (for read-path
+events, where a lost event on a hard crash is acceptable but request latency is
+not — see ADR-016).
 """
 import uuid
 from datetime import datetime
 
 from fastapi import Request
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domain.enums import AuditAction, AuditEntity, UserRole
 from app.infrastructure.models.audit import AuditEvent
@@ -23,6 +26,37 @@ def client_ip(request: Request | None) -> str | None:
     return request.client.host
 
 
+def build_values(
+    *,
+    actor: User,
+    action: AuditAction,
+    entity_type: AuditEntity,
+    entity_id: uuid.UUID | None,
+    request: Request | None,
+    detail: dict | None,
+) -> dict:
+    """Flatten an event into plain data (safe to carry into a background task,
+    where the ORM user and Request object are no longer available)."""
+    return {
+        "actor_id": actor.id,
+        "actor_email": actor.email,
+        "actor_role": UserRole(actor.role),
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "ip_address": client_ip(request),
+        "detail": detail or None,
+    }
+
+
+async def _write(session: AsyncSession, values: dict) -> None:
+    try:
+        session.add(AuditEvent(**values))
+        await session.commit()
+    except Exception:  # noqa: BLE001 - audit must never break the audited action
+        await session.rollback()
+
+
 async def record(
     session: AsyncSession,
     *,
@@ -33,23 +67,22 @@ async def record(
     request: Request | None = None,
     detail: dict | None = None,
 ) -> None:
-    """Append one audit event. Never raises — a logging failure must not break
-    the action being audited."""
-    event = AuditEvent(
-        actor_id=actor.id,
-        actor_email=actor.email,
-        actor_role=UserRole(actor.role),
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        ip_address=client_ip(request),
-        detail=detail or None,
+    """Append one audit event synchronously on the given session."""
+    await _write(
+        session,
+        build_values(
+            actor=actor, action=action, entity_type=entity_type,
+            entity_id=entity_id, request=request, detail=detail,
+        ),
     )
-    try:
-        session.add(event)
-        await session.commit()
-    except Exception:
-        await session.rollback()
+
+
+async def record_values(
+    session_factory: async_sessionmaker[AsyncSession], values: dict
+) -> None:
+    """Append one pre-built audit event on a fresh session (background use)."""
+    async with session_factory() as session:
+        await _write(session, values)
 
 
 async def list_events(

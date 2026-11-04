@@ -1,19 +1,12 @@
 import pytest
 
-from app.domain.auth import UserCreate
 from app.domain.enums import UserRole
-from app.services.auth import create_user
-
-
-async def _login(client, email, password="password123"):
-    r = await client.post("/api/auth/login", json={"email": email, "password": password})
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+from tests.helpers import login as _login
+from tests.helpers import make_user
 
 
 async def _setup_encounter(client, db_session, role=UserRole.REFERRING_CLINICIAN, email="c@x.io"):
-    await create_user(
-        db_session, UserCreate(email=email, full_name="C", password="password123", role=role)
-    )
+    await make_user(db_session, email, role)
     headers = await _login(client, email)
     patient = (
         await client.post(
@@ -155,7 +148,33 @@ async def test_radiologist_cannot_open_upload(client, db_session):
 
 
 async def _setup_rad(client, db_session):
-    await create_user(
-        db_session, UserCreate(email="r@x.io", full_name="R", password="password123", role=UserRole.RADIOLOGIST)
-    )
+    await make_user(db_session, "r@x.io", UserRole.RADIOLOGIST)
     return await _login(client, "r@x.io")
+
+
+# --- Non-DICOM image path -------------------------------------------------
+
+async def test_png_upload_processes(client, db_session, sample_png_bytes):
+    headers, enc_id = await _setup_encounter(client, db_session)
+    data = sample_png_bytes
+    up = (await _open(client, headers, enc_id, "xray.png", "image/png", len(data))).json()["id"]
+    await client.put(f"/api/studies/uploads/{up}?offset=0", headers=headers, content=data)
+    study_id = (await client.post(f"/api/studies/uploads/{up}/complete", headers=headers)).json()["id"]
+
+    got = (await client.get(f"/api/studies/{study_id}", headers=headers)).json()
+    assert got["status"] == "Pending"
+    assert got["is_dicom"] is False
+    assert got["has_preview"] is True
+
+    preview = await client.get(f"/api/studies/{study_id}/preview", headers=headers)
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/jpeg"
+
+
+async def test_unsupported_type_rejected(client, db_session):
+    headers, enc_id = await _setup_encounter(client, db_session)
+    data = b"%PDF-1.4 not an image"
+    up = (await _open(client, headers, enc_id, "note.pdf", "application/pdf", len(data))).json()["id"]
+    await client.put(f"/api/studies/uploads/{up}?offset=0", headers=headers, content=data)
+    completed = await client.post(f"/api/studies/uploads/{up}/complete", headers=headers)
+    assert completed.status_code == 415

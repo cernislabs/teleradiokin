@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
@@ -7,6 +7,7 @@ import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { AuthService } from '../../core/auth.service';
 import { PatientService } from '../../core/patient.service';
 import { StudyService } from '../../core/study.service';
+import { ObjectUrls } from '../../core/object-url';
 import { Encounter, Patient, Study } from '../../core/models';
 
 @Component({
@@ -16,12 +17,13 @@ import { Encounter, Patient, Study } from '../../core/models';
   templateUrl: './patient-detail.component.html',
   styleUrl: './patients.scss',
 })
-export class PatientDetailComponent implements OnInit {
+export class PatientDetailComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly patients = inject(PatientService);
   private readonly studyService = inject(StudyService);
   private readonly auth = inject(AuthService);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly objectUrls = new ObjectUrls();
 
   readonly patient = signal<Patient | null>(null);
   readonly encounters = signal<Encounter[]>([]);
@@ -66,9 +68,13 @@ export class PatientDetailComponent implements OnInit {
 
   private loadPreview(studyId: string): void {
     this.studyService.getPreviewBlob(studyId).subscribe((blob) => {
-      const url = this.sanitizer.bypassSecurityTrustUrl(URL.createObjectURL(blob));
+      const url = this.sanitizer.bypassSecurityTrustUrl(this.objectUrls.create(blob));
       this.previews.update((map) => ({ ...map, [studyId]: url }));
     });
+  }
+
+  ngOnDestroy(): void {
+    this.objectUrls.revokeAll();
   }
 
   addEncounter(reason: string): void {

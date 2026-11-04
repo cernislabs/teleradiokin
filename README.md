@@ -17,8 +17,10 @@ and graceful retries.
 
 ## What it does (MVP scope)
 
-- **Authentication & roles** — `Admin`, `ReferringClinician` (uploads studies, requests
-  reads), `Radiologist` (reviews studies, writes reports). JWT-based auth.
+- **Authentication, roles & access scoping** — `Admin`, `ReferringClinician` (uploads
+  studies, requests reads), `Radiologist` (reviews studies, writes reports). JWT-based auth.
+  Records are scoped by **organization** (referring site): clinicians see only their own
+  site's patients and studies, while radiologists and admins read across all sites.
 - **Patient & encounter records** — demographics, identifiers, consent acknowledgment, and
   encounters linked to one or more imaging studies. Data model is *FHIR-leaning*, stored
   relationally with **JSONB** for flexible/extensible fields.
@@ -188,7 +190,9 @@ seed accounts are created idempotently on first boot.
 | Radiologist | `radiologist@teleradiokin.org` | `Radio!2345` |
 | Referring clinician | `clinician@teleradiokin.org` | `Clinic!2345` |
 
-Log in at http://localhost:4200. A sample patient (`MRN-0001`) with an encounter is seeded.
+The seeded clinician belongs to a sample organization (`Kinshasa General Clinic`) and sees
+only that site's records; the radiologist and admin are cross-site. Log in at
+http://localhost:4200. A sample patient (`MRN-0001`) with an encounter is seeded.
 To try an upload: open the patient, pick an encounter, and upload a DICOM (`.dcm`) **or** an
 ordinary JPEG/PNG (both are accepted) — it uploads in resumable chunks, is processed in the
 background, and a compressed preview thumbnail appears when its status reaches `Pending`.
@@ -213,16 +217,32 @@ type. The audit log is admin-only; other roles receive `403`.
 
 ## Testing
 
+The suite needs no running database (it uses an in-memory SQLite engine) and no local
+Python — run it in the backend image. From the project root:
+
 ```bash
-cd backend
-pip install -r requirements-dev.txt
-pytest
+# Build the backend image once (or reuse the one from `docker compose build`).
+docker build -t teleradiokin-backend ./backend
+
+# Run the tests inside it (dev-only deps installed on the fly).
+docker run --rm -u 0 --entrypoint sh -v "$PWD/backend:/app" -w /app \
+  teleradiokin-backend \
+  -c "pip install -q -r requirements-dev.txt && pytest -q"
 ```
+
+With a local Python 3.12 toolchain you can instead `cd backend && pip install -r
+requirements-dev.txt && pytest`.
 
 - **Unit tests** cover domain logic and the DICOM pipeline (metadata extraction, preview
   generation, validity checks).
-- **Integration tests** cover the API and the upload pipeline (SQLite-backed for speed).
-- **End-to-end smoke test** exercises the upload → review → report flow.
+- **Integration tests** cover each API surface — auth/roles, organization-scoped access,
+  patients/encounters, chunked upload (DICOM and PNG), reports, and the audit trail —
+  SQLite-backed for speed.
+- **Hardening tests** cover config fail-fast, storage path-traversal/move, the `extra` size
+  cap, pagination, and stale-processing recovery.
+- **End-to-end smoke test** (`test_e2e.py`) exercises the whole flow through the HTTP API:
+  clinician uploads a DICOM → background processing → radiologist reviews and reports →
+  clinician downloads the PDF → admin inspects the audit trail.
 
 ---
 

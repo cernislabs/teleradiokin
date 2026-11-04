@@ -2,10 +2,10 @@
 import uuid
 from datetime import datetime
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.domain.enums import EncounterStatus
-from app.domain.schemas import AppModel
+from app.domain.schemas import AppModel, bounded_extra
 
 
 class EncounterCreate(AppModel):
@@ -16,6 +16,8 @@ class EncounterCreate(AppModel):
     notes: str | None = Field(default=None, max_length=2000)
     extra: dict = Field(default_factory=dict)
 
+    _check_extra = field_validator("extra")(bounded_extra)
+
 
 class EncounterUpdate(AppModel):
     status: EncounterStatus | None = None
@@ -23,6 +25,8 @@ class EncounterUpdate(AppModel):
     occurred_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=2000)
     extra: dict | None = None
+
+    _check_extra = field_validator("extra")(bounded_extra)
 
 
 class EncounterRead(AppModel):

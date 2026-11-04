@@ -15,9 +15,11 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.authz import AccessScope
 from app.core.config import get_settings
+from app.core.errors import ServiceError
 from app.domain.enums import StudyStatus
-from app.infrastructure.models.patient import Encounter
+from app.infrastructure.models.patient import Encounter, Patient
 from app.infrastructure.models.study import Study, UploadSession
 from app.infrastructure.storage import StudyStorage
 from app.services.dicom import (
@@ -33,35 +35,50 @@ DICOM_CONTENT_TYPES = {"application/dicom", "application/octet-stream", ""}
 IMAGE_CONTENT_TYPES = {"image/jpeg", "image/jpg", "image/png"}
 
 
-class UploadError(Exception):
-    """Validation/state error during upload; carries an HTTP status + detail."""
-
-    def __init__(self, status_code: int, detail: str) -> None:
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
-
-
 # --- Queries --------------------------------------------------------------
 
 async def get_study(session: AsyncSession, study_id: uuid.UUID) -> Study | None:
     return await session.get(Study, study_id)
 
 
+async def get_study_visible(
+    session: AsyncSession, study_id: uuid.UUID, scope: AccessScope
+) -> Study | None:
+    """Fetch a study only if the caller's scope may see it (else None → 404)."""
+    study = await session.get(Study, study_id)
+    if study is None:
+        return None
+    if scope.cross_site:
+        return study
+    patient = await session.get(Patient, study.patient_id)
+    if patient is None or not scope.allows_org(patient.organization_id):
+        return None
+    return study
+
+
 async def list_studies(
     session: AsyncSession,
     *,
+    scope: AccessScope,
     status: StudyStatus | None = None,
     patient_id: uuid.UUID | None = None,
     encounter_id: uuid.UUID | None = None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[Study]:
     stmt = select(Study).order_by(Study.created_at.desc())
+    if not scope.cross_site:
+        # Restrict to studies of patients in the caller's organization.
+        stmt = stmt.join(Patient, Study.patient_id == Patient.id).where(
+            Patient.organization_id == scope.organization_id
+        )
     if status is not None:
         stmt = stmt.where(Study.status == status)
     if patient_id is not None:
         stmt = stmt.where(Study.patient_id == patient_id)
     if encounter_id is not None:
         stmt = stmt.where(Study.encounter_id == encounter_id)
+    stmt = stmt.limit(limit).offset(offset)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
@@ -80,13 +97,13 @@ async def open_upload(
 ) -> UploadSession:
     settings = get_settings()
     if total_size <= 0:
-        raise UploadError(400, "total_size must be greater than zero")
+        raise ServiceError(400, "total_size must be greater than zero")
     if total_size > settings.max_upload_bytes:
-        raise UploadError(
+        raise ServiceError(
             413, f"File exceeds the maximum of {settings.max_upload_bytes} bytes"
         )
     if await session.get(Encounter, encounter_id) is None:
-        raise UploadError(404, "Encounter not found")
+        raise ServiceError(404, "Encounter not found")
 
     upload = UploadSession(
         encounter_id=encounter_id,
@@ -118,17 +135,17 @@ async def append_chunk(
 ) -> UploadSession:
     settings = get_settings()
     if upload.status != "open":
-        raise UploadError(409, "Upload session is not open")
+        raise ServiceError(409, "Upload session is not open")
     if offset != upload.received_bytes:
-        raise UploadError(
+        raise ServiceError(
             409, f"Unexpected offset; resume from {upload.received_bytes}"
         )
     if len(data) == 0:
-        raise UploadError(400, "Empty chunk")
+        raise ServiceError(400, "Empty chunk")
     if len(data) > settings.max_chunk_bytes:
-        raise UploadError(413, "Chunk too large")
+        raise ServiceError(413, "Chunk too large")
     if upload.received_bytes + len(data) > upload.total_size:
-        raise UploadError(400, "Chunk exceeds declared total size")
+        raise ServiceError(400, "Chunk exceeds declared total size")
 
     new_size = storage.append_bytes(upload.temp_key, data)
     upload.received_bytes = new_size
@@ -148,7 +165,7 @@ def _classify(filename: str, content_type: str | None) -> str:
     # octet-stream with no hint: try DICOM.
     if ct in DICOM_CONTENT_TYPES:
         return "dicom"
-    raise UploadError(415, "Unsupported file type (expected DICOM or JPEG/PNG)")
+    raise ServiceError(415, "Unsupported file type (expected DICOM or JPEG/PNG)")
 
 
 async def complete_upload(
@@ -158,9 +175,9 @@ async def complete_upload(
     storage: StudyStorage,
 ) -> Study:
     if upload.status != "open":
-        raise UploadError(409, "Upload session is not open")
+        raise ServiceError(409, "Upload session is not open")
     if upload.received_bytes != upload.total_size:
-        raise UploadError(
+        raise ServiceError(
             400,
             f"Incomplete upload: {upload.received_bytes}/{upload.total_size} bytes",
         )
@@ -172,25 +189,24 @@ async def complete_upload(
         storage.delete(upload.temp_key)
         upload.status = "aborted"
         await session.commit()
-        raise UploadError(400, "File is not a valid DICOM object")
+        raise ServiceError(400, "File is not a valid DICOM object")
     if kind == "image" and not is_valid_image(temp_full):
         storage.delete(upload.temp_key)
         upload.status = "aborted"
         await session.commit()
-        raise UploadError(400, "File is not a valid image")
+        raise ServiceError(400, "File is not a valid image")
 
     encounter = await session.get(Encounter, upload.encounter_id)
     if encounter is None:
-        raise UploadError(404, "Encounter not found")
+        raise ServiceError(404, "Encounter not found")
 
     study_id = uuid.uuid4()
     suffix = Path(upload.filename).suffix or (".dcm" if kind == "dicom" else ".bin")
     storage_key = f"studies/{study_id}/original{suffix}"
 
-    # Move the temp object into its final location.
-    with storage.open(upload.temp_key) as fh:
-        storage.save(storage_key, fh)
-    storage.delete(upload.temp_key)
+    # Move the temp object into its final location (rename when same-filesystem;
+    # avoids a second full-file IO pass on large studies).
+    storage.move(upload.temp_key, storage_key)
 
     study = Study(
         id=study_id,
