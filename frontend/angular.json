@@ -29,6 +29,11 @@
             ],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
+            "allowedCommonJsDependencies": [
+              "cornerstone-core",
+              "cornerstone-wado-image-loader",
+              "dicom-parser"
+            ],
             "assets": [
               {
                 "glob": "**/*",

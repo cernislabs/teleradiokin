@@ -142,6 +142,27 @@ async def get_study(
     return study
 
 
+@router.get("/{study_id}/file")
+async def get_file(
+    study_id: uuid.UUID,
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StudyStorage = Depends(get_storage),
+):
+    """Serve the original stored object (fed to the in-browser DICOM viewer)."""
+    study = await svc.get_study(session, study_id)
+    if study is None:
+        raise HTTPException(status_code=404, detail="Study not found")
+    media_type = "application/dicom" if study.is_dicom else (
+        study.content_type or "application/octet-stream"
+    )
+    return FileResponse(
+        storage.full_path(study.storage_key),
+        media_type=media_type,
+        filename=study.original_filename,
+    )
+
+
 @router.get("/{study_id}/preview")
 async def get_preview(
     study_id: uuid.UUID,

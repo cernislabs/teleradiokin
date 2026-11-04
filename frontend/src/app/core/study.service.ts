@@ -17,6 +17,20 @@ export class StudyService {
     });
   }
 
+  worklist(status = 'Pending'): Observable<Study[]> {
+    return this.http.get<Study[]>(`${API_BASE}/studies`, { params: { status } });
+  }
+
+  get(studyId: string): Observable<Study> {
+    return this.http.get<Study>(`${API_BASE}/studies/${studyId}`);
+  }
+
+  getFileBlob(studyId: string): Observable<Blob> {
+    return this.http.get(`${API_BASE}/studies/${studyId}/file`, {
+      responseType: 'blob',
+    });
+  }
+
   previewUrl(studyId: string): string {
     return `${API_BASE}/studies/${studyId}/preview`;
   }

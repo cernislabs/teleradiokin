@@ -1,0 +1,33 @@
+<div class="page">
+  <header class="page-head">
+    <h1 i18n="@@worklist.title">Worklist</h1>
+    <div class="spacer"></div>
+    <a routerLink="/" class="btn-link" i18n="@@common.backToDashboard">← Dashboard</a>
+  </header>
+
+  <p class="subtitle" i18n="@@worklist.subtitle">Studies pending review.</p>
+
+  @if (loading()) {
+    <p i18n="@@common.loading">Loading…</p>
+  } @else if (studies().length === 0) {
+    <p class="empty" i18n="@@worklist.empty">No studies pending review.</p>
+  } @else {
+    <div class="work-grid">
+      @for (s of studies(); track s.id) {
+        <a class="work-card" [routerLink]="['/studies', s.id, 'view']">
+          @if (previews()[s.id]) {
+            <img [src]="previews()[s.id]" alt="study preview" />
+          } @else {
+            <div class="thumb-placeholder">{{ s.is_dicom ? 'DICOM' : 'IMG' }}</div>
+          }
+          <div class="work-meta">
+            <strong>{{ s.modality ?? '—' }} · {{ s.body_part ?? '—' }}</strong>
+            <small>{{ s.original_filename }}</small>
+            <small>{{ s.created_at | date: 'short' }}</small>
+            <span class="open" i18n="@@worklist.open">Open ↗</span>
+          </div>
+        </a>
+      }
+    </div>
+  }
+</div>

@@ -200,8 +200,34 @@ compatible with a move to S3 multipart later.
 
 ---
 
+## ADR-010 — In-browser DICOM viewer (cornerstone)
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context.** Radiologists need to open a study full-size and read it in the browser (zoom,
+pan, window/level), per the chosen "embed OHIF/cornerstone" direction.
+
+**Decision.** Embed the **cornerstone** stack (`cornerstone-core`,
+`cornerstone-wado-image-loader`, `dicom-parser`) rather than the full OHIF application. The
+backend serves the original object at `GET /api/studies/{id}/file`; the Angular viewer fetches
+it (auth via the HTTP interceptor), hands the bytes to the wado-uri file manager, and renders
+into an enabled element with Window/Level, Pan, and Zoom implemented directly on the
+cornerstone viewport (no cornerstone-tools dependency). The viewer route is **lazy-loaded** so
+cornerstone (~1.5 MB) stays out of the initial bundle. Web workers are disabled, so no extra
+codec/worker assets are served. Non-DICOM images are shown directly.
+
+**Why.** cornerstone gives real DICOM rendering with far less weight and configuration than a
+full OHIF deployment — right-sized for one viewer screen at MVP. Serving the original file
+(rather than standing up full DICOMweb/WADO-RS) is the simplest retrieval that feeds the
+viewer; a DICOMweb endpoint can be added later without changing the client contract much.
+
+**Trade-off.** With web workers off, **compressed transfer syntaxes** (e.g. JPEG2000) that
+need codec wasm are not yet supported — uncompressed DICOM (what the pipeline accepts/produces)
+renders today; codec support is a follow-up. Multi-frame/series navigation and measurement
+tools are deferred.
+
+---
+
 <!-- Upcoming ADRs (added as iterations land):
-     ADR-010 DICOM viewer (OHIF/cornerstone) + DICOMweb retrieval
      ADR-011 Report-delivery approach (with teleradiology literature rationale)
      ADR-012 Audit trail design
 -->

@@ -1,0 +1,59 @@
+<div class="viewer">
+  <header class="toolbar">
+    <a routerLink="/worklist" class="btn-link" i18n="@@viewer.back">← Worklist</a>
+    <div class="spacer"></div>
+    @if (isDicom()) {
+      <div class="tools">
+        <button [class.active]="activeTool() === 'wwwc'" (click)="setTool('wwwc')"
+                i18n="@@viewer.tool.wl">Window/Level</button>
+        <button [class.active]="activeTool() === 'pan'" (click)="setTool('pan')"
+                i18n="@@viewer.tool.pan">Pan</button>
+        <button [class.active]="activeTool() === 'zoom'" (click)="setTool('zoom')"
+                i18n="@@viewer.tool.zoom">Zoom</button>
+        <button (click)="reset()" i18n="@@viewer.tool.reset">Reset</button>
+      </div>
+    }
+  </header>
+
+  <div class="stage">
+    <div
+      #viewport
+      class="cs-viewport"
+      [style.display]="isDicom() ? 'block' : 'none'"
+      (mousedown)="onMouseDown($event)"
+      (mousemove)="onMouseMove($event)"
+      (mouseup)="onMouseUp()"
+      (mouseleave)="onMouseUp()"
+      (wheel)="onWheel($event)"
+      (contextmenu)="$event.preventDefault()"
+    ></div>
+
+    @if (!isDicom() && imageUrl()) {
+      <img class="plain-image" [src]="imageUrl()" alt="study image" />
+    }
+
+    @if (error()) {
+      <p class="error" role="alert">{{ error() }}</p>
+    }
+  </div>
+
+  @if (study(); as s) {
+    <aside class="meta">
+      <div><span i18n="@@viewer.meta.status">Status</span>: <strong>{{ s.status }}</strong></div>
+      <div><span i18n="@@viewer.meta.modality">Modality</span>: {{ s.modality ?? '—' }}</div>
+      <div><span i18n="@@viewer.meta.body">Body part</span>: {{ s.body_part ?? '—' }}</div>
+      <div><span i18n="@@viewer.meta.accession">Accession</span>: {{ s.accession_number ?? '—' }}</div>
+      <div><span i18n="@@viewer.meta.date">Study date</span>: {{ s.study_date ?? '—' }}</div>
+      <div><span i18n="@@viewer.meta.file">File</span>: {{ s.original_filename }}</div>
+      <a [routerLink]="['/patients', s.patient_id]" class="btn-link" i18n="@@viewer.meta.patient">
+        View patient →
+      </a>
+    </aside>
+  }
+
+  @if (isDicom()) {
+    <p class="hint" i18n="@@viewer.hint">
+      Drag to apply the selected tool; scroll to zoom.
+    </p>
+  }
+</div>

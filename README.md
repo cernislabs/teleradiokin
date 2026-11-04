@@ -193,6 +193,10 @@ To try an upload: open the patient, pick an encounter, and upload a DICOM (`.dcm
 ordinary JPEG/PNG (both are accepted) — it uploads in resumable chunks, is processed in the
 background, and a compressed preview thumbnail appears when its status reaches `Pending`.
 
+To review: open the **Worklist** from the dashboard (or log in as the radiologist), pick a
+pending study, and open it in the full-size viewer — DICOM renders in-browser with
+Window/Level, Pan, and Zoom; non-DICOM images are shown directly.
+
 > Secrets (JWT signing key, database credentials, seed passwords) are read from environment
 > variables and are **not** committed to source. Configure them in `.env`.
 

@@ -91,6 +91,19 @@ async def test_chunked_dicom_upload_processes(client, db_session, sample_dicom_b
 
 # --- Resume + offset errors ----------------------------------------------
 
+async def test_study_file_served(client, db_session, sample_dicom_bytes):
+    headers, enc_id = await _setup_encounter(client, db_session)
+    data = sample_dicom_bytes
+    up = (await _open(client, headers, enc_id, "c.dcm", "application/dicom", len(data))).json()["id"]
+    await client.put(f"/api/studies/uploads/{up}?offset=0", headers=headers, content=data)
+    study_id = (await client.post(f"/api/studies/uploads/{up}/complete", headers=headers)).json()["id"]
+
+    resp = await client.get(f"/api/studies/{study_id}/file", headers=headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/dicom"
+    assert len(resp.content) == len(data)
+
+
 async def test_resume_reports_offset(client, db_session, sample_dicom_bytes):
     headers, enc_id = await _setup_encounter(client, db_session)
     data = sample_dicom_bytes
